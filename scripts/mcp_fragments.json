@@ -1,0 +1,19 @@
+{
+	"1c-testpilot": {
+		"type": "stdio",
+		"command": "1c-testpilot",
+		"args": [],
+		"env": {
+			"TC1C_TRANSPORT": "stdio",
+			"TC1C_PROFILES_FILE": ".zcode/testpilot/profiles.yaml",
+			"TC1C_CODE_EXECUTION": "false",
+			"TC1C_QUERY_EXECUTION": "false",
+			"TC1C_METADATA": "false",
+			"TC1C_FUNCTIONS": "false"
+		}
+	},
+	"1c-db": {
+		"type": "http",
+		"url": "{{1c_db_url}}"
+	}
+}

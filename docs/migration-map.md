@@ -1,63 +1,58 @@
 # Карта переноса 1c-omp → 1c-zcode
 
 Донор: `../1c-omp`. Здесь — куда ложится каждый слой донора на механики ZCode
-и что с ним сейчас. Правило переноса: копируется смысл, механика переводится
+и что с ним. Правило переноса: копируется смысл, механика переводится
 (см. AGENTS.md корня).
 
-## Сделано
+## Сделано (v0.2.0)
 
 | Слой 1c-omp | Механика ZCode | Что вышло |
 |---|---|---|
-| `package.json` → `omp.extensions` | `.zcode-plugin/plugin.json` | манифест: имя, версия, `skills`, `hooks` |
-| `unica-gate.ts`, ветка edit/write/bash (маршрутизация исходников) | `PreToolUse` (матчер `^(Write\|Edit\|ApplyPatch\|Bash)$`) + `process`-скрипт | `hooks/unica_source_gate.py`: блок прямой правки `src/{cf,cfe,epf,erf}`, `tests/{cfe,epf}`; эскалация `.zcode/unica-gate-escalations.txt`; аудит |
-| аудит `~/.omp/logs/rule-audit.jsonl` | то же, в `~/.zcode/logs/` | формат записи сохранён (rule/action/decision/reason/timestamp) |
-| вход «Проверить без 1С» (bun-тесты) | python3-тесты, процесс + stdin | `tests/test_unica_source_gate.py` |
-| `rules/unica-source-gate.md` (проза маршрутизации) | навык | `skills/1c-contour/SKILL.md` (свернуто в инварианты) |
+| `package.json` → `omp.extensions` | `.zcode-plugin/plugin.json` | манифест: имя, версия, `skills`, `hooks`, `commands` |
+| `unica-gate.ts` (весь) | `PreToolUse`/`PostToolUse` process-скрипты | `hooks/unica_source_gate.py`: маршрутизация правки + rebuild-инвариант (расширение `fullRebuild:true`, main — инкрементально) + worktree-check + замок ИБ + аудит правки allowlist'а |
+| `lib/ib-lock.ts` | файловый замок по `session_id` | `hooks/ib_lock.py`: ключ sha1(connection+tree), TTL 20 мин (pid-проверка дона неприменима — процессы хуков одноразовые), освобождение на `PostToolUse`, выметание на `SessionStart` |
+| `session_shutdown`-уборка | `SessionStart`-хук | `hooks/session_clean.py`: просроченные замки + состояние гейтов старше 7 дней |
+| `doc-gate` (строгий проектный вариант боевого проекта) | состояние по `session_id` | `hooks/doc_gate.py`: мутации юники — только после непустого `documentation.*`/`standards.*`; мутация метаданных сбрасывает флаг |
+| `retry-gate` | `PostToolUseFailure`/`PostToolUse` + состояние | `hooks/retry_gate.py`: третий идентичный повтор после двух ошибок — блок |
+| `mcp-gate` | fail-closed контур | `hooks/mcp_gate.py`: новый стек — `1c-testpilot` (`tc_execute_*`) и `1c-db` (execute_code и др.); признак `contour:` в v8project\*.yaml или `.zcode/contour`; REST-toolkit через bash тоже распознаётся |
+| `session_shutdown` отсутствует | — | осознанная замена: TTL + SessionStart (см. выше) |
+| проза правил (свернуто) | навыки + генерируемая секция AGENTS.md | `skills/1c-contour` (инварианты, гейты, приоритеты качества), `templates/agents-section.md` |
+| `1c-project-bootstrap` (навык + скрипты) | навык + скрипты | `skills/1c-project-bootstrap`, `scripts/{wire_config.py,init_worktree.sh}`, `scripts/mcp_fragments.json` |
+| `unica-test-contour` | НЕ переносится — заменён | новый стек: testpilot/mcp-toolkit (полный переход); взамен — `skills/1c-test-contour` + workflows `1c-e2e-run`/`1c-e2e-record` (record-first, readback, ЖР, приёмка-код) |
+| `1c-mcp-server` (MCP_Сервер) | НЕ переносится — заменён | MCP `1c-db` (1c-mcp-toolkit) + `skills/1c-db-data`; прод-гейт расширен на оба новых сервера |
+| стайл-гейт (новое, в omp — TTSR-правило) | `PostToolUse` | `hooks/bsl_style_gate.py`: чекер пака 1c-bsl-code-style по изменённым `.bsl`, advisory-отчёт; приоритет пака над стандартами/диагностикой — в `1c-contour` |
+| поставка | каталог + deploy-runner | `deploy.json` (контракт v1 sot-zcode-marketplace), вендоринг в `<repo>/.zcode/`; self-`marketplace.json` удалён |
+| миграция со старого контура | скрипт + команда | `scripts/migrate_from_omp.py`, `/1c-migrate-from-omp`, `docs/MIGRATION-FROM-OMP.md` |
 
-## Не начато (в порядке ценности)
+## Не начато / сознательно не переносится
 
-1. **Инвариант пересборки** (`unica-gate.ts`: расширение — всегда
-   `fullRebuild: true`, `main` — никогда). В ZCode вызовы Unica MCP — это
-   инструменты с именами вида `mcp__unica__*`: нужен отдельный матчер
-   `PreToolUse` на них и разбор аргументов. До уточнения фактических имён
-   инструментов unica под ZCode не делается — сначала снять `tools/list`
-   живого сервера.
-2. **Замок на инфобазу** (`lib/ib-lock.ts`): серверная база одна на все
-   деревья. Аналог: `PreToolUse` берёт замок (файл в
-   `~/.zcode/state/1c-ib-locks/`, ключ — hash строки подключения),
-   `PostToolUse` отпускает для синхронных операций; долгие джобы — до конца
-   сессии/TTL. Отдельно решить, чем заменить `session_shutdown`
-   (кандидат — `SessionStart`: подчищать протухшие замки своего хоста).
-3. **Проверка ворктри** (`unica-gate.ts`: `v8project.local.yaml` +
-   `build/tools/` в дереве): тот же `PreToolUse` на вызовы Unica из ворктри.
-4. **doc-gate** («сверка перед записью»): в omp — флаг в замыкании модуля;
-   здесь — файл состояния по `session_id` из входа хука (хуки stateless).
-   Мутирующий вызов без записи о сверке в состоянии → блок.
-5. **retry-gate** (третий идентичный повтор): состояние «команда → подряд
-   ошибок» внешне по `session_id`; ошибки ловит `PostToolUseFailure`.
-6. **mcp-gate** (изменяющие инструменты `MCP_Сервер` в прод-контуре):
-   распознавание вызова в `Bash`/`Write`; признак контура — `.zcode/contour`
-   или ключ в `v8project.local.yaml`; fail-closed.
-7. **Навыки донора** (`1c-project-bootstrap`, `unica-project-setup`,
-   `unica-test-contour`, `1c-mcp-server`): переносить по одному, проверяя,
-   что команды omp-специфичные заменены (`omp plugin …` → маркетплейс ZCode).
-   Скрипты навыков (bash/python) переносятся почти как есть.
-8. **Проза правил** (`test-contour`, `ib-contour`, `worktree-env`,
-   `unica-mcp`, стиль BSL…): sticky-блоки — в AGENTS.md целевого проекта
-   (шаблоном в bootstrap-навыке), операционные — справочниками внутри
-   соответствующих навыков.
-9. **Поставка**: отдельный каталог-репо (аналог `sot-omp-marketplace`) вместо
-   локального `marketplace.json` в корне.
+1. **`unica-project-setup`** (authoring `v8project.yaml`): у юники 0.13 свои
+   скиллы (`unica:cf-init`, `unica:cfe-init` и др.) — дублировать нечего;
+   наш bootstrap ссылается на них.
+2. **Vanessa/YAxUnit-обвязка** (`test-yaxunit.sh`, `xvfb-run-1c.sh`,
+   `yaxunit.json`, VAParams-генератор): полный переход на testpilot;
+   legacy-файлы проектов не удаляются, помечаются legacy при миграции.
+3. **`UserPromptSubmit`-пуши** (замена TTSR): не делаем без доказанной нужды.
+4. **Юнит-тесты от агента**: не поддерживаются контуром (внутренний оракул) —
+   e2e + ЖР вместо них.
+
+## Проверки на живом стенде (не закрыты без 1С)
+
+- фактические короткие имена `mcp__unica__*` снять живым `tools/list`
+  (дефолты гейтов — из донора; сервер юники в ZCode называется `unica`);
+- семантика exit 2 у `PostToolUse` (для bsl_style_gate точка роста
+  `HARD_BLOCK`);
+- формат hooks в `.zcode/config.json` (wire_config) и подхват вендоренных
+  `.zcode/workflows/*.dwf.ts` (ListSavedWorkflows);
+- видимость workspace-MCP субагентами workflow.
 
 ## Осознанные различия
 
-- **Нет слоя `rules/`.** Механики TTSR/sticky в ZCode нет; её замена —
-  AGENTS.md проекта (push, всегда в контексте) и навыки (pull, по
-  description). Дублировать omp-поведение «правило срабатывает по потоку»
-  можно `UserPromptSubmit`-хуком с `additionalContext`, но это push в каждый
-  промпт — делать только при доказанной нужде.
-- **Замки и состояние — вне процесса.** В omp хук-модуль жил в сессии; здесь
-  каждый запуск — новый процесс. Все будущие гейты с состоянием проектируются
-  от файла состояния, не от памяти.
-- **Тесты на python3**, не bun: гейт — python-скрипт, тестируем тем же
-  рантаймом, что и исполняет хук.
+- **Нет слоя `rules/`**: AGENTS.md проекта (push) + навыки (pull);
+  секция контура в AGENTS.md — между маркерами, владелец — плагин.
+- **Замки и состояние — вне процесса**: всё состояние по `session_id` в
+  `~/.zcode/state/1c/…`; гейты не имеют памяти между запусками.
+- **Тесты на python3**: гейт — python-скрипт, тестируем тем же рантаймом.
+- **Мягкая зависимость от юники**: `UNICA_MIN=0.13.0` в `scripts/doctor.py`
+  + `docs/UNICA.md`; формальная dependency не используется (нет ranges,
+  переключение каналов ручное).

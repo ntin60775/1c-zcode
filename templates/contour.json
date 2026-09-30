@@ -1,0 +1,29 @@
+{
+	"testpilot": {
+		"profile": "main"
+	},
+	"1c_db": {
+		"url": "http://127.0.0.1:6003/mcp"
+	},
+	"unica": {
+		"server": "unica"
+	},
+	"mcp_gate": {
+		"dangerous": {
+			"1c-testpilot": [
+				"tc_execute_code",
+				"tc_execute_query",
+				"tc_execute_custom_bsl_function"
+			],
+			"1c-db": [
+				"execute_code",
+				"submit_for_deanonymization",
+				"restart_1c_session",
+				"close_1c_session"
+			]
+		}
+	},
+	"style": {
+		"pack": ".zcode/style"
+	}
+}

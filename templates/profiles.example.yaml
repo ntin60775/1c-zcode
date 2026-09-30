@@ -1,0 +1,15 @@
+# Профили тестовых баз 1c-testpilot (контуры 1c-zcode).
+# Копия лежит в .zcode/testpilot/profiles.yaml (в git БЕЗ паролей:
+# пароль передаётся именем env-переменной в password_env).
+# Формат — profiles.yaml 1c-testpilot; перечитывается на каждом обращении,
+# так что правка не требует перезапуска сервера.
+
+main:
+  base: build/ib            # каталог файловой базы или имя базы кластера
+  # server: true            # серверная база: base: MyBase, server: true
+  user: Тестировщик
+  password_env: TC1C_MAIN_PASSWORD   # пароль берётся из окружения
+  # exe: /opt/1cv8/x86_64/8.3.27/1cv8
+  # version: 8.3.27
+  desktop: isolated         # изолированный рабочий стол (Xvfb на Linux)
+  wait: 60

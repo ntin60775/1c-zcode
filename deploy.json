@@ -1,0 +1,53 @@
+{
+  "contract_version": 1,
+  "strategy": "replace",
+  "mappings": [
+    {
+      "from": "skills/1c-contour",
+      "to": ".zcode/skills/1c-contour"
+    },
+    {
+      "from": "skills/1c-test-contour",
+      "to": ".zcode/skills/1c-test-contour"
+    },
+    {
+      "from": "skills/1c-db-data",
+      "to": ".zcode/skills/1c-db-data"
+    },
+    {
+      "from": "skills/1c-project-bootstrap",
+      "to": ".zcode/skills/1c-project-bootstrap"
+    },
+    {
+      "from": "hooks",
+      "to": ".zcode/hooks"
+    },
+    {
+      "from": "workflows",
+      "to": ".zcode/workflows"
+    },
+    {
+      "from": "scripts",
+      "to": ".zcode/1c/scripts"
+    },
+    {
+      "from": "templates",
+      "to": ".zcode/1c/templates"
+    }
+  ],
+  "on_drift": "fail",
+  "preflight": [
+    {
+      "command": "python3 --version"
+    }
+  ],
+  "post_update": [
+    {
+      "run": "python3 .zcode/1c/scripts/wire_config.py .",
+      "if_exists": ".zcode/1c/scripts/wire_config.py"
+    },
+    {
+      "say": "Перезапусти сессию ZCode: hooks и MCP серверы (1c-testpilot, 1c-db) подключаются на старте сессии."
+    }
+  ]
+}
