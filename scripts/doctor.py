@@ -121,12 +121,16 @@ def main() -> int:
 		fail(".zcode/testpilot/profiles.yaml нет — e2e-контур не поднимется")
 
 	# ── 4. Стайл-чекер ──
+	style_paths = (
+		root / ".zcode" / "skills" / "1c-bsl-code-style" / "scripts" / "bsl_style_check.py",
+		root / ".zcode" / "style" / "scripts" / "bsl_style_check.py",
+	)
 	engine = os.environ.get("1C_STYLE_ENGINE")
 	if engine and Path(engine).exists():
 		ok(f"стайл-движок: env 1C_STYLE_ENGINE ({engine})")
 	elif shutil.which("bsl-style-engine"):
 		ok("стайл-движок: bsl-style-engine в PATH")
-	elif (root / ".zcode" / "style" / "scripts" / "bsl_style_check.py").is_file():
+	elif any(p.is_file() for p in style_paths):
 		ok("стайл-чекер: вендоренный пак 1c-bsl-code-style")
 	else:
 		warn("стайл-чекер не найден — bsl-style-gate пропускает проверки "

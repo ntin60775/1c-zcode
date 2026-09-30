@@ -27,10 +27,10 @@ def main() -> int:
 		state = str(tmp_path / "state")
 		tree = tmp_path / "tree"
 		cwd = str(tree)
-		pack = tree / ".zcode" / "style" / "scripts"
-		pack.mkdir(parents=True)
+		pack_new = tree / ".zcode" / "skills" / "1c-bsl-code-style" / "scripts"
+		pack_new.mkdir(parents=True)
 		(tree / "src" / "cf" / "M").mkdir(parents=True)
-		checker = pack / "bsl_style_check.py"
+		checker = pack_new / "bsl_style_check.py"
 		checker.write_text(FAKE_CHECKER, encoding="utf-8")
 
 		def post(tool, tool_input, env_checker=None):
@@ -73,6 +73,15 @@ def main() -> int:
 		check(".bsl вне src/ не проверяется", r.returncode == 0 and not r.stderr.strip(), r.stderr[:120])
 		r = post("Write", {"file_path": "src/cf/M/Form.xml", "content": "ПЛОХО"})
 		check("не-.bsl исходник не проверяется", r.returncode == 0 and not r.stderr.strip(), r.stderr[:120])
+
+		# ── прежняя раскладка .zcode/style/… тоже резолвится ──
+		pack_old = tree / ".zcode" / "style" / "scripts"
+		pack_old.mkdir(parents=True)
+		(pack_old / "bsl_style_check.py").write_text(FAKE_CHECKER, encoding="utf-8")
+		(tree / bsl).write_text("Если ПЛОХО Тогда\n", encoding="utf-8")
+		r = post("Write", {"file_path": bsl, "content": "…"})
+		check("прежняя раскладка пака резолвится", "tab-rhythm" in r.stderr, r.stderr[:200])
+		(pack_old / "bsl_style_check.py").unlink()
 
 		# ── чекер не установлен — тихий пропуск ──
 		checker.unlink()

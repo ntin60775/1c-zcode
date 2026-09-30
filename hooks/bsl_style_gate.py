@@ -10,8 +10,10 @@
   1. env 1C_STYLE_ENGINE — исполняемый движок с контрактом
      `check <files> [--scenarios <dir>] [--fix]`, exit 0/1 (будущий Go-движок);
   2. bsl-style-engine в PATH — тот же контракт;
-  3. <корень>/.zcode/style/scripts/bsl_style_check.py — вендоренный пак
-     (`check` не принимает, вызывается как `<скрипт> <files>`, exit 0/1).
+  3. вендоренный пак 1c-bsl-code-style:
+     <корень>/.zcode/skills/1c-bsl-code-style/scripts/bsl_style_check.py
+     (`check` не принимает, вызывается как `<скрипт> <files>`, exit 0/1);
+  4. <корень>/.zcode/style/scripts/bsl_style_check.py — прежняя раскладка.
 Не найден — тихий пропуск (наличие подсветит /1c-doctor).
 
 Вердикт гейта — advisory (exit 0 + отчёт в stderr): правка уже применена,
@@ -41,7 +43,10 @@ HARD_BLOCK = False  # точка роста: перевести в True посл
 
 ENGINE_ENV = "1C_STYLE_ENGINE"
 ENGINE_NAME = "bsl-style-engine"
-PACK_CHECKER = ".zcode/style/scripts/bsl_style_check.py"
+PACK_CHECKERS = (
+	".zcode/skills/1c-bsl-code-style/scripts/bsl_style_check.py",
+	".zcode/style/scripts/bsl_style_check.py",
+)
 
 APPLY_PATCH_FILE_RE = re.compile(r"^\*\*\* (?:Update|Add) File: (.+)$", re.M)
 
@@ -56,9 +61,10 @@ def resolve_checker(root: str):
 	which = shutil.which(ENGINE_NAME)
 	if which:
 		return [which, "check"], True
-	pack = Path(root) / PACK_CHECKER
-	if pack.is_file():
-		return [sys.executable, str(pack)], False
+	for rel in PACK_CHECKERS:
+		pack = Path(root) / rel
+		if pack.is_file():
+			return [sys.executable, str(pack)], False
 	return None
 
 

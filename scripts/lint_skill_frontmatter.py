@@ -77,8 +77,12 @@ def main() -> int:
 		if not root.is_dir():
 			issues.append(f"корень {root} не существует")
 			continue
+		if (root / "SKILL.md").is_file():
+			skills_found += 1
+			issues += lint_skill(root.resolve())
+			continue
 		for skill_dir in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")):
-			if not (skill_dir / "SKILL.md").is_file() and not any(skill_dir.glob("*/SKILL.md")):
+			if not (skill_dir / "SKILL.md").is_file():
 				continue
 			skills_found += 1
 			issues += lint_skill(skill_dir)
