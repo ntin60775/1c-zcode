@@ -1,0 +1,3 @@
+.forbidden-names.txt
+__pycache__/
+*.pyc

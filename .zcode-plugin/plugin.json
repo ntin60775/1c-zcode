@@ -1,0 +1,18 @@
+{
+  "name": "1c-zcode",
+  "version": "0.1.0",
+  "description": "ZCode-плагин контура 1С-разработки: гейт исходников Unica и навыки контура. Порт 1c-omp на механики ZCode.",
+  "author": {
+    "name": "Valera Kovalskii"
+  },
+  "license": "MIT",
+  "keywords": [
+    "1c",
+    "1c-enterprise",
+    "bsl",
+    "unica",
+    "contour"
+  ],
+  "skills": "./skills",
+  "hooks": "./hooks/hooks.json"
+}

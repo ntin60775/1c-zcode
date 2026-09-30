@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Write|Edit|ApplyPatch|Bash)$",
+        "hooks": [
+          {
+            "type": "process",
+            "command": "python3",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/unica_source_gate.py"],
+            "timeoutMs": 10000,
+            "statusMessage": "1c-zcode: гейт исходников Unica"
+          }
+        ]
+      }
+    ]
+  }
+}
