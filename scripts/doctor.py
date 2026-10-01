@@ -3,7 +3,7 @@
 
 Проверяет (без 1С и сети, кроме явных http-проб):
   1. Unica установлена и ровно один канал; версия >= UNICA_MIN.
-  2. 1c-testpilot в PATH.
+  2. 1c-testpilot в PATH + окружение e2e-прогонов (pytest в venv).
   3. Проектные файлы контура: v8project.yaml, .zcode/config.json (разводка
      через wire_config --check), .zcode/1c/contour.json, profiles.yaml.
   4. Стайл-чекер резолвится (env → PATH → вендоренный пак).
@@ -130,11 +130,28 @@ def main() -> int:
 			else:
 				fail(f"unica MCP: {result.get('message')}")
 
-	# ── 2. 1c-testpilot ──
+	# ── 2. 1c-testpilot: MCP-команда + окружение для e2e-прогонов ──
 	if shutil.which("1c-testpilot"):
 		ok("1c-testpilot в PATH")
 	else:
-		fail("1c-testpilot не найден в PATH (pipx install 1c-testpilot)")
+		fail("1c-testpilot не найден в PATH (scripts/install_testpilot.sh)")
+
+	tp_env = os.environ.get("TESTPILOT_PYTHON") or str(
+		Path.home() / ".local" / "venvs" / "1c-testpilot" / "bin" / "python")
+	if not Path(tp_env).is_file():
+		pipx = Path.home() / ".local" / "pipx" / "venvs" / "1c-testpilot" / "bin" / "python"
+		tp_env = str(pipx) if pipx.is_file() else ""
+	if tp_env:
+		probe = subprocess.run([tp_env, "-c", "import pytest, testpilot"],
+			capture_output=True, text=True)
+		if probe.returncode == 0:
+			ok(f"e2e-окружение testpilot готово (pytest): {tp_env}")
+		else:
+			warn(f"в {tp_env} нет pytest — e2e-прогоны недоступны; "
+			     "scripts/install_testpilot.sh переставит окружение")
+	else:
+		warn("окружение testpilot (venv/pipx) не найдено — e2e-прогоны недоступны; "
+		     "scripts/install_testpilot.sh")
 
 	# ── 3. Проектные файлы ──
 	if (root / "v8project.yaml").is_file():

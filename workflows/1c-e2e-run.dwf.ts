@@ -1,48 +1,42 @@
 /* zcode-workflow
 args:
-  scenario:
+  tests:
     type: string
-    description: "Путь к файлу сценария testpilot (XML) относительно корня проекта; пусто — все сценарии из .zcode/testpilot/scenarios/"
+    description: "Каталог или файл e2e-тестов pytest относительно корня проекта; пусто — tests/e2e"
   profile:
     type: string
-    description: "Имя профиля тестовой базы в profiles.yaml"
+    description: "Имя профиля тестовой базы из .zcode/testpilot/profiles.yaml"
     default: "main"
-description: "E2E-прогон бизнес-сценария 1С через testpilot: независимая сверка по журналу регистрации, анти-ложно-зелёный вердикт кодом"
-whenToUse: "Прогнать записанный e2e-сценарий (или набор) на тестовой базе 1С и получить доказательный вердикт: прогоны после правок, приёмка, регресс"
+description: "E2E-прогон 1С без человека: pytest + Python API 1c-testpilot (тест-клиент поднимается сам в приватном Xvfb), при фейле — расследование, независимая ЖР-сверка, анти-ложно-зелёный вердикт кодом"
+whenToUse: "Прогнать e2e-тесты 1С (tests/e2e) на тестовой базе и получить доказательный вердикт: приёмка после правок, регресс, прогон равный CI"
 */
 
-// E2E-прогон с внешним оракулом (контур 1c-zcode):
-//   1) тестировщик гонит сценарий инструментами mcp__1c-testpilot__* и
-//      возвращает readback-доказательства;
-//   2) НЕЗАВИСИМЫЙ субагент сверяет журнал регистрации через mcp__1c-db__get_event_log —
-//      он не видел, что делал тестировщик;
-//   3) вердикт приёмки считает КОД, не модель: нулевые проверки, отсутствие
-//      ЖР-сверки или ошибки в ЖР = красный (анти-ложно-зелёный принцип).
+// Прогон исполняет scripts/run_e2e.sh — детерминированный pytest, модель в
+// прогоне не участвует (тот же результат в CI). Субагенты нужны только для
+// расследования фейлов и независимой ЖР-сверки. Вердикт считает КОД:
+// ноль собранных тестов, ошибки прогона или ошибки в журнале регистрации = красный.
 
-interface StepOutcome {
-	/** Имя шага сценария. */
-	name: string;
-	/** Шаг прошёл (readback подтвердил ожидание). */
-	ok: boolean;
-	/** Сколько содержательных проверок сделано на шаге (readback != 0 — проверка). */
-	checks: number;
-	/** Доказательство: value_before/value_after, сообщения форм, скриншот-путь. */
-	evidence: string;
+interface E2eSummary {
+	collected: number;
+	passed: number;
+	failed: number;
+	errors: number;
+	skipped: number;
+	exit_code: number;
+	junit: boolean;
 }
 
-interface RunResult {
-	/** Тест-клиент запущен и сценарий выполнялся. */
-	launched: boolean;
-	/** Имя профиля тестовой базы. */
-	profile: string;
-	/** Шаги с доказательствами. */
-	steps: StepOutcome[];
-	/** Сводка одним-двумя предложениями, по-русски. */
-	summary: string;
+interface RunOutcome {
+	/** Код возврата run_e2e.sh. */
+	exitCode: number;
+	/** E2E_SUMMARY_JSON из хвоста вывода; null — скрипт упал до прогона. */
+	summary: E2eSummary | null;
+	/** Хвост вывода (последние ~80 строк) для отчёта и расследования. */
+	tail: string;
 }
 
 interface JournalScan {
-	/** ЖР-сверка выполнена (get_event_log по окну прогона). */
+	/** ЖР-сверка выполнена (get_event_log за окно прогона). */
 	scanned: boolean;
 	/** Записи Error/Fatal за окно прогона: «Тип — Дата — Комментарий». */
 	errors: string[];
@@ -53,95 +47,119 @@ interface JournalScan {
 }
 
 const profile = String(args.profile ?? "main");
-const scenario = String(args.scenario ?? "");
+const tests = String(args.tests ?? "tests/e2e");
 
-phase("Прогон сценария тест-клиентом");
-const runner = agent("e2e-тестировщик", {
+phase("Прогон e2e-тестов (pytest, без модели)");
+const runner = agent("e2e-прогонщик", {
 	system:
-		"Ты — e2e-тестировщик 1С. Гоняешь записанные сценарии инструментами MCP " +
-		"сервера 1c-testpilot (базовый набор: tc_session, tc_find, tc_window, tc_field, " +
-		"tc_table; прочие — точечно, их схемы дороги). Каждое изменение формы " +
-		"подтверждай readback-ом (value_before/value_after из ответа инструмента) — " +
-		"«нажал и надеюсь» не считается. Сценарии — XML testpilot; реплей через " +
-		"tc_scenario. Если инструмент недоступен или сценарий не воспроизводится — " +
-		"эскалируй с фактами, не выдумывай результат.",
+		"Ты запускаешь ровно одну команду и честно возвращаешь её результат. " +
+		"Ничего не чини, не перезапускай, не интерпретируй — только факты вывода.",
 });
-const run = await runner.ask<RunResult>(
-	"Прогони e2e-сценарий 1С на тестовой базе и верни типизированный результат. " +
-		"Профиль: " + profile + ". " +
-		(scenario
-			? "Сценарий: " + scenario + ". "
-			: "Сценарии: все XML из .zcode/testpilot/scenarios/ (нет каталога — эскалируй). ") +
-		"Поток: tc_session launch_client(profile) → шаги → tc_session close. " +
-		"Запиши время старта и финиша прогона (для окна ЖР-сверки) в summary. " +
-		"Отвечай по-русски.",
+const run = await runner.ask<RunOutcome>(
+	"Выполни в корне проекта команду:\n" +
+		"  bash .zcode/1c/scripts/run_e2e.sh " + profile + " " + tests + "\n" +
+		"Это может занять несколько минут (поднимается тест-клиент 1С) — задай таймаут не меньше 300000. " +
+		"Из вывода возьми: последнюю строку вида E2E_SUMMARY_JSON {...} (распарси JSON в поле summary; " +
+		"если строки нет — summary=null) и последние ~80 строк вывода (в поле tail). " +
+		"Код возврата команды верни как exitCode. Отвечай по-русски.",
 );
-log("Прогон завершён: шагов " + run.steps.length + ", запущен: " + run.launched);
+log(
+	"Прогон: exit " + run.exitCode +
+	(run.summary ? ", собрано " + run.summary.collected + ", упало " + (run.summary.failed + run.summary.errors) : ", summary нет"),
+);
 
 phase("Независимая сверка по журналу регистрации");
-const checksTotal = run.steps.reduce((sum, s) => sum + s.checks, 0);
 const oracle = agent("сверщик журнала", {
 	system:
 		"Ты — независимый сверщик: смотришь только журнал регистрации базы 1С через " +
-		"MCP сервер 1c-db (get_event_log), не зная, что делал тестировщик. Твоя задача — " +
+		"MCP сервер 1c-db (get_event_log), не зная, что делал прогон. Твоя задача — " +
 		"найти записи Error/Fatal за указанное окно времени. Если сервер недоступен — " +
 		"честно верни scanned=false с причиной, не подставляй пустой результат.",
 });
 const scan = await oracle.ask<JournalScan>(
-	"Сверь журнал регистрации тестовой базы за окно прогона e2e-сценария " +
-		"(окно и контекст: " + JSON.stringify(run.summary) + "). " +
-		"Верни ошибки Error/Fatal строками «Тип — Дата — Комментарий», предупреждения — " +
-		"отдельно. Отвечай по-русски.",
+	"Сверь журнал регистрации тестовой базы за последние 15 минут (окно e2e-прогона, " +
+		"профиль " + profile + "). Верни ошибки Error/Fatal строками «Тип — Дата — Комментарий», " +
+		"предупреждения — отдельно. Отвечай по-русски.",
 );
-log(
-	"ЖР-сверка: " + (scan.scanned ? "ошибок " + scan.errors.length : "не выполнена — " + scan.note),
-);
+log("ЖР-сверка: " + (scan.scanned ? "ошибок " + scan.errors.length : "не выполнена — " + scan.note));
+
+let diagnosis = "";
+if (run.exitCode !== 0 || (run.summary !== null && run.summary.collected === 0)) {
+	phase("Расследование фейла");
+	const investigator = agent("расследователь e2e-фейла", {
+		system:
+			"Ты — диагност e2e-контура 1С. Ищешь причину фейла прогона pytest + testpilot, " +
+			"не чиня ничего: только диагноз и конкретное предложение. Можешь читать " +
+			"test-results/ (артефакты, скриншоты, junit), сами тесты tests/e2e/, и при " +
+			"необходимости развести форму Python API testpilot " +
+			"($HOME/.local/venvs/1c-testpilot/bin/python, Client из testpilot, профиль из " +
+			".zcode/testpilot/profiles.yaml). Канон — скилл .zcode/skills/1c-test-contour/SKILL.md. " +
+			"Базу не мутируй: только чтение форм/данных.",
+	});
+	diagnosis = await investigator.ask<string>(
+		"Прогон e2e упал. Вывод:\n\n" + run.tail.slice(-4000) + "\n\n" +
+			"Дай диагноз: что упало, почему (корневая причина, не симптом), что конкретно править — " +
+			"тест или код конфигурации. Не применяй правки. Отвечай по-русски, абзац-два.",
+	);
+	log("Диагноз получен");
+}
 
 phase("Вердикт приёмки и отчёт");
 // Вердикт считает код — модель не может «оценить» прогон зелёным.
+const s = run.summary;
 const verdictOk =
-	run.launched &&
-	checksTotal > 0 &&
+	run.exitCode === 0 &&
+	s !== null &&
+	s.junit &&
+	s.collected > 0 &&
+	s.failed === 0 &&
+	s.errors === 0 &&
 	scan.scanned &&
-	scan.errors.length === 0 &&
-	run.steps.every((s) => s.ok);
+	scan.errors.length === 0;
 const reasons: string[] = [];
-if (!run.launched) reasons.push("тест-клиент не запущен или сценарий не выполнялся");
-if (checksTotal === 0) reasons.push("ноль содержательных проверок — анти-ложно-зелёный принцип");
+if (run.exitCode !== 0) reasons.push("run_e2e.sh завершился с кодом " + run.exitCode);
+if (s === null) reasons.push("нет E2E_SUMMARY_JSON — прогон не дошёл до тестов");
+else {
+	if (!s.junit) reasons.push("junit-отчёт не создан — тесты не выполнились");
+	if (s.collected === 0) reasons.push("ноль собранных тестов — анти-ложно-зелёный принцип");
+	if (s.failed > 0 || s.errors > 0) reasons.push("упавших: " + s.failed + ", ошибок: " + s.errors);
+}
 if (!scan.scanned) reasons.push("ЖР-сверка не выполнена: " + scan.note);
 if (scan.errors.length > 0) reasons.push("ошибки в ЖР: " + scan.errors.length);
 
 const reportLines = [
 	"# E2E-прогон: " + (verdictOk ? "ЗЕЛЁНЫЙ" : "КРАСНЫЙ"),
 	"",
-	"- Профиль: " + run.profile,
-	"- Шагов: " + run.steps.length + ", проверок: " + checksTotal,
+	"- Профиль: " + profile + ", тесты: " + tests,
+	s ? "- Собрано: " + s.collected + ", прошло: " + s.passed + ", упало: " + (s.failed + s.errors) + (s.skipped ? ", пропущено: " + s.skipped : "") : "- Сводки нет",
 	"- ЖР-сверка: " + (scan.scanned ? "выполнена, ошибок " + scan.errors.length : "НЕ выполнена — " + scan.note),
 	"",
 	"## Вердикт",
-	verdictOk ? "Сценарий принят: проверки подтверждены readback-ом, ЖР чист." : "Прогон не принят:",
+	verdictOk
+		? "Прогон принят: pytest зелёный, тесты собраны и выполнены, журнал регистрации чист."
+		: "Прогон не принят:",
 	...(verdictOk ? [] : reasons.map((r) => "- " + r)),
 	"",
-	"## Шаги",
-	...run.steps.map((s) => "- " + (s.ok ? "✓" : "✗") + " " + s.name + " (проверок: " + s.checks + ") — " + s.evidence),
+	...(diagnosis ? ["## Диагноз", diagnosis, ""] : []),
+	"## Вывод pytest",
+	"```",
+	run.tail.trim(),
+	"```",
 	"",
 	"## Журнал регистрации",
 	...(scan.errors.length ? scan.errors.map((e) => "- ERROR: " + e) : ["- ошибок Error/Fatal нет"]),
 	...(scan.warnings.length ? scan.warnings.map((w) => "- WARN: " + w) : []),
-	"",
-	"## Сводка прогона",
-	run.summary,
 ];
 await artifact.markdown("e2e-report", reportLines.join("\n"), {
 	title: "Отчёт e2e-прогона",
-	description: "Вердикт приёмки, шаги с readback-доказательствами и ЖР-сверка.",
+	description: "Вердикт приёмки, сводка pytest, диагноз фейла и ЖР-сверка.",
 	primary: true,
 });
 
 return {
 	verdict: verdictOk ? "passed" : "failed",
-	checksTotal,
+	collected: s ? s.collected : 0,
+	failed: s ? s.failed + s.errors : -1,
 	journalErrors: scan.errors.length,
-	profile: run.profile,
-	summary: run.summary,
+	profile,
 };

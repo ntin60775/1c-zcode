@@ -15,7 +15,7 @@ bootstrap и миграция. Нативный порт [1c-omp](../1c-omp) н�
 | `hooks/` | гейты (python3 stdlib, stateless, состояние в `~/.zcode/state/1c/`): `unica_source_gate` (правка только через Unica + инварианты пересборки + ворктри + замок ИБ), `doc_gate` (мутации после сверки с документацией), `retry_gate`, `mcp_gate` (прод-контур fail-closed), `bsl_style_gate` (пак стайла), `ib_lock`, `session_clean` |
 | `skills/` | `1c-contour` (карта контура, приоритеты качества), `1c-test-contour` (e2e), `1c-db-data` (данные базы), `1c-project-bootstrap` |
 | `commands/` | `/1c-doctor`, `/1c-test`, `/1c-bootstrap`, `/1c-migrate-from-omp` |
-| `workflows/` | `1c-e2e-run` (прогон с ЖР-сверкой и приёмкой-кодом), `1c-e2e-record` (запись сценария с живой сессии) |
+| `workflows/` | `1c-e2e-author` (агент сам пишет e2e-тест), `1c-e2e-run` (прогон pytest без модели + ЖР-сверка и приёмка-кодом) |
 | `scripts/` | `wire_config.py` (разводка `.zcode/config.json`), `init_worktree.sh`, `migrate_from_omp.py`, `doctor.py`, `lint_skill_frontmatter.py` |
 | `templates/` | contour.json, profiles.example.yaml, agents-section.md (секция AGENTS.md проекта) |
 | `deploy.json` | контракт v1 sot-zcode-marketplace (вендоринг в `<repo>/.zcode/`) |
