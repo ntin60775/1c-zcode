@@ -18,7 +18,10 @@ when_to_use: "Проект 1С подключается к контуру (вп�
 2. **`.zcode/testpilot/profiles.yaml`** — профили тестовых баз (если нет):
    по образцу `.zcode/1c/templates/profiles.example.yaml`. Пароли — только
    `password_env`; значения переменных живут вне git (окружение машины).
-   Создай и `.zcode/testpilot/scenarios/` под XML-сценарии.
+   У профиля для e2e нужен `base` (путь к тестовой копии базы) и
+   `desktop: isolated`. E2E-тесты живут в `tests/e2e/` проекта
+   (workflow `1c-e2e-author` пишет их сам); XML-сценарии (`uilog`) —
+   разовые smoke, не носитель регресса.
 3. **`.zcode/config.json`** — разводка hooks + MCP:
    `python3 .zcode/1c/scripts/wire_config.py <корень>`. Идемпотентно:
    повторный запуск безопасен, чужие hook-записи сохраняет.
@@ -38,6 +41,11 @@ when_to_use: "Проект 1С подключается к контуру (вп�
    fail-closed).
 7. **Проверка**: `/1c-doctor` — все проверки зелёные; тестовый unica-вызов
    (`mcp__unica__project_status` с `cwd` корня) отвечает.
+8. **E2E/API-ритуал** (после зелёного doctor): GUI-e2e — прогон
+   `bash .zcode/1c/scripts/run_e2e.sh <профиль>`; API — публикация
+   `bash .zcode/1c/scripts/publish_ib.sh start` (порт в `contour.json →
+   1c.publish.port`), тесты дергают `PUBLISH_URL` из `E2E_PUBLISH_JSON`.
+   Первые тесты пишет workflow `1c-e2e-author`.
 
 ## Ворктри
 
@@ -46,10 +54,24 @@ when_to_use: "Проект 1С подключается к контуру (вп�
 `v8project.local.yaml`, `build/tools/`, разбирается с базой. Флаг
 `--test-contour` помечает дерево тестовым.
 
+## Машинный слой (один раз на машину, не в проект)
+
+Скрипты ставят окружение, doctor его проверяет:
+
+- `bash .zcode/1c/scripts/install_testpilot.sh` — venv с
+  `1c-testpilot[allure]` (e2e: MCP-команда + pytest-прогоны), симлинк в
+  `~/.local/bin`;
+- `bash .zcode/1c/scripts/install_1c_mcp_proxy.sh` — venv python-прокси
+  `1c-db` (встроенный транспорт тулкита — Windows-only, на Linux только
+  прокси; клиент подключается сам через `startup;mode=proxy`);
+- `bash .zcode/1c/scripts/doctor.py <проект>` — итог зелёный;
+- `xvfb` в системе обязателен (`desktop: isolated` = приватный Xvfb;
+  Debian/Ubuntu: `sudo apt install xvfb`).
+
 ## Чего НЕ делает bootstrap
 
 - Не ставит Unica (внешний плагин, `unica@unica-next`/`unica` — см.
-  `docs/UNICA.md` в репо контура) и `1c-testpilot` (`pipx install
-  1c-testpilot`) — это машина, не проект.
+  `docs/UNICA.md` в репо контура); машинный слой (testpilot, прокси 1c-db,
+  xvfb) — см. «Машинный слой» выше, это машина, не проект.
 - Не трогает `v8project.yaml` (внешний контракт v8-runner/unica).
 - Не пишет креды никуда, кроме `password_env`-переменных.

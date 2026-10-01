@@ -70,6 +70,11 @@ PY
 )"
 
 export TC1C_PROFILES_FILE="$PROFILES"
+# Тест-клиент наследует окружение: без этого под Xvfb ловим чёрные окна
+# (Wayland/GTK, аппаратный GL) — тот же фикс, что у клиента 1c-db.
+export GDK_BACKEND=x11
+export LIBGL_ALWAYS_SOFTWARE=1
+unset WAYLAND_DISPLAY 2>/dev/null || true
 mkdir -p "$ROOT/test-results"
 cd "$ROOT"
 

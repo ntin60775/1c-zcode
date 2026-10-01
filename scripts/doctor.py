@@ -180,6 +180,11 @@ def main() -> int:
 				ok(f"API-публикация жива на :{pub_port}")
 	except Exception:
 		pass  # не поднята — норм: поднимается перед API-прогоном
+	if shutil.which("Xvfb") is None:
+		warn("Xvfb не найден — desktop: isolated (e2e тест-клиент) не поднимется; "
+		     "Debian/Ubuntu: sudo apt install xvfb")
+	else:
+		ok("Xvfb на месте (изолированный дисплей e2e)")
 
 	# ── 3. Проектные файлы ──
 	if (root / "v8project.yaml").is_file():
