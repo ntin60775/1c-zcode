@@ -222,8 +222,21 @@ def main() -> int:
 		print("    … затем повтори миграцию (шаги 3 и 7 довершились бы сейчас)")
 		FAILED.append("контур не вендорен в проект")
 
-	# ── 8. Критерий чистоты + legacy ──
+	# ── 8. Критерий чистоты + готовность v8project к 0.13 ──
 	print("8. Критерий чистоты")
+	v8 = root / "v8project.yaml"
+	if v8.is_file():
+		try:
+			v8text = v8.read_text(encoding="utf-8")
+		except OSError:
+			v8text = ""
+		if re.search(r"(?m)^builder\s*:", v8text):
+			print("  ⚠ v8project.yaml: ключ builder отвергается схемой 0.13 — убери и")
+			print("    задай исполнителя per-operation providers (файловая — ibcmd,")
+			print("    серверная — designer); иначе unica.run не примет конфиг")
+		if not re.search(r"(?m)^infobases\s*:", v8text) and re.search(r"(?m)^infobase\s*:", v8text):
+			print("  • v8project.yaml в форме 0.12 (infobase.connection): 0.13 читает")
+			print("    legacy на миграции; при случае перейди на infobases.origin.connection")
 	dirty = []
 	if apply:
 		for path in root.rglob("*"):

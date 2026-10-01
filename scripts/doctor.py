@@ -17,6 +17,7 @@
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -95,6 +96,19 @@ def main() -> int:
 	# ── 3. Проектные файлы ──
 	if (root / "v8project.yaml").is_file():
 		ok("v8project.yaml на месте")
+		try:
+			v8text = (root / "v8project.yaml").read_text(encoding="utf-8")
+		except OSError:
+			v8text = ""
+		if re.search(r"(?m)^builder\s*:", v8text):
+			fail("v8project.yaml: ключ builder отвергается схемой 0.13 — убери его, "
+			     "исполнителя задавай per-operation providers (файловая — ibcmd, "
+			     "серверная — designer); пока он там, unica.run не примет конфиг")
+		if re.search(r"(?m)^infobases\s*:", v8text):
+			ok("связь базы в форме 0.13 (infobases.origin)")
+		elif re.search(r"(?m)^infobase\s*:", v8text):
+			warn("v8project.yaml в форме 0.12 (infobase.connection) — 0.13 читает "
+			     "legacy на миграции, но лучше перейти на infobases.origin.connection")
 	else:
 		fail("v8project.yaml не найден — это не проект 1С или файл не создан")
 
