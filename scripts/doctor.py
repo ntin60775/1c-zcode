@@ -67,10 +67,12 @@ def main() -> int:
 	installed = Path.home() / ".zcode" / "cli" / "plugins" / "installed_plugins.json"
 	unica_entries = []
 	try:
-		data = json.loads(installed.read_text(encoding="utf-8"))
-		for key, meta in (data or {}).items():
-			if key.startswith("unica@"):
-				unica_entries.append((key, str(meta.get("version") or "0")))
+		registry = json.loads(installed.read_text(encoding="utf-8"))
+		plugins = registry.get("plugins") if isinstance(registry, dict) else registry
+		for meta in plugins or []:
+			if isinstance(meta, dict) and str(meta.get("name") or "") == "unica":
+				plugin_id = str(meta.get("id") or meta.get("name") or "unica")
+				unica_entries.append((plugin_id, str(meta.get("version") or "0")))
 	except (OSError, json.JSONDecodeError, AttributeError):
 		warn("реестр установленных плагинов не читается — проверь unica руками")
 	if not unica_entries:

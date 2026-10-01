@@ -14,15 +14,17 @@
   3. AGENTS.md: вставить/заменить секцию контура между маркерами
      BEGIN/END 1C CONTOUR (шаблон .zcode/1c/templates/agents-section.md).
      KB-секцию (ontoship, .gitmark) НЕ трогаем.
-  4. Удалить .omp/ целиком: tracked — git rm, ignored (plugins/, backup) — rm.
-  5. .gitignore: убрать строки omp-блока (.omp/…).
-  6. tasks/init-worktree.sh: перепривязать на .zcode/1c/scripts/init_worktree.sh
-     (если содержит старый канон в plugin-cache — заменить путь).
-  7. Разводка .zcode/config.json (wire_config.py), если вендоренные файлы
-     контура уже в проекте.
-  8. Критерий чистоты: grep по проекту `\\.omp|omp plugin|unica-gate\\.ts|`
-     `~/\\.omp` = 0 находок вне git-истории; legacy-артефакты (tasks/mcp,
-     tools/yaxunit.json, features/) — только отчётом.
+  4. v8project.yaml → форма 0.13: убрать отвергаемый ключ builder;
+     infobase.connection → infobases.origin.connection (если блок простой;
+     сложный остаётся — 0.13 читает legacy).
+  5. Правила проекта переезжают: .omp/rules/*.md → docs/omp-migrated/rules/
+     (git mv; смысловое из RULES.md покрывает секция контура).
+  6. Удалить .omp/ целиком: tracked — git rm, ignored (plugins/, backup) — rm.
+  7. .gitignore: убрать строки omp-блока (.omp/…).
+  8. tasks/init-worktree.sh: перепривязать на .zcode/1c/scripts/init_worktree.sh.
+  9. Разводка .zcode/config.json (wire_config.py), если контур вендорен.
+  10. Критерий чистоты: grep `\\.omp|omp plugin|unica-gate\\.ts|~/\\.omp` = 0
+      находок вне git-истории; legacy-артефакты — отчётом.
 
 Запуск: python3 migrate_from_omp.py <project-root> [--apply]
 Exit: 0 — план напечатан/миграция прошла, 1 — проект не подходит/ошибка.
@@ -74,6 +76,10 @@ def remove_path(root: Path, rel: str, apply: bool):
 				FAILED.append(f"git rm {rel}: {done.stderr.strip()}")
 				print(f"  ✗ git rm {rel}: {done.stderr.strip()}")
 				return
+			# git rm не трогает ignored-файлы внутри (plugins/, backup) — дочищаем
+			if path.exists():
+				import shutil
+				shutil.rmtree(path, ignore_errors=True)
 		DONE.append(f"git rm {rel}")
 		note(f"git rm: {rel} (tracked)")
 	elif apply:
@@ -161,15 +167,83 @@ def main() -> int:
 			print("  ⚠ шаблон секции не вендорен — сначала deploy контура в проект")
 			FAILED.append("шаблон agents-section.md не найден")
 
-	# ── 4. Удаление .omp/ ──
-	print("4. Старый контур .omp/")
+	# ── 4. v8project.yaml: переход на форму 0.13 ──
+	print("4. v8project.yaml → 0.13")
+	v8 = root / "v8project.yaml"
+	if v8.is_file():
+		try:
+			v8_lines = v8.read_text(encoding="utf-8").splitlines()
+		except OSError:
+			v8_lines = []
+		changed = []
+		# builder отвергается схемой 0.13 — убираем (per-operation providers)
+		kept = [ln for ln in v8_lines if not re.match(r"(?m)^builder\s*:", ln)]
+		if len(kept) != len(v8_lines):
+			changed.append("убран ключ builder (0.13: per-operation providers)")
+			v8_lines = kept
+		# infobase: (0.12) → infobases: origin: (0.13), если блок простой
+		# (только connection) — сложный блок оставляем: 0.13 читает legacy
+		if not any(re.match(r"(?m)^infobases\s*:", ln) for ln in v8_lines):
+			out, i, converted = [], 0, False
+			while i < len(v8_lines):
+				line = v8_lines[i]
+				if re.match(r"(?m)^infobase\s*:", line):
+					j, block = i + 1, []
+					while j < len(v8_lines) and (v8_lines[j][:1] in (" ", "\t")):
+						block.append(v8_lines[j]); j += 1
+					if block and all(ln.strip().startswith("connection:") for ln in block):
+						out.append("infobases:")
+						out.append("  origin:")
+						out.extend("    " + ln.strip() for ln in block)
+						converted = True
+					else:
+						out.append(line); out.extend(block)
+					i = j
+					continue
+				out.append(line); i += 1
+			if converted:
+				v8_lines = out
+				changed.append("infobase.connection → infobases.origin.connection (0.13)")
+		if apply and changed:
+			v8.write_text("\n".join(v8_lines).rstrip() + "\n", encoding="utf-8")
+			DONE.append("v8project.yaml (0.13)")
+		for entry in changed:
+			note(f"v8project.yaml: {entry}")
+		if not changed:
+			note("v8project.yaml уже в форме 0.13")
+	else:
+		note("v8project.yaml нет — пропуск")
+
+	# ── 5. Правила проекта: переезд в docs/omp-migrated/rules/ ──
+	print("5. Правила проекта (переживают удаление .omp/)")
+	rules_dir = omp / "rules"
+	if rules_dir.is_dir():
+		dst = root / "docs" / "omp-migrated" / "rules"
+		if apply:
+			dst.mkdir(parents=True, exist_ok=True)
+		for rule_file in sorted(rules_dir.glob("*.md")):
+			target = dst / rule_file.name
+			if apply:
+				if tracked(root, f".omp/rules/{rule_file.name}"):
+					run_git(root, "mv", f".omp/rules/{rule_file.name}", str(target))
+				else:
+					import shutil
+					shutil.copy2(rule_file, target)
+				DONE.append(str(target))
+			note(f"переехало: .omp/rules/{rule_file.name} → {target.relative_to(root)}")
+		note("смысловое из RULES.md/APPEND_SYSTEM.md покрывается секцией контура в AGENTS.md")
+	else:
+		note(".omp/rules/ нет")
+
+	# ── 6. Удаление .omp/ ──
+	print("6. Старый контур .omp/")
 	omp_entries = sorted(p.name for p in omp.iterdir())
 	note(f"удалить целиком {OMP_DIR}/ ({', '.join(omp_entries)})")
 	if apply:
 		remove_path(root, OMP_DIR, apply=True)
 
 	# ── 5. .gitignore ──
-	print("5. .gitignore: omp-блок")
+	print("7. .gitignore: omp-блок")
 	gitignore = root / ".gitignore"
 	if gitignore.is_file():
 		lines = gitignore.read_text(encoding="utf-8").splitlines()
@@ -183,7 +257,7 @@ def main() -> int:
 			note("omp-строк в .gitignore нет")
 
 	# ── 6. tasks/init-worktree.sh ──
-	print("6. Канон init-worktree")
+	print("8. Канон init-worktree")
 	init_sh = root / "tasks" / "init-worktree.sh"
 	if init_sh.is_file():
 		text = init_sh.read_text(encoding="utf-8")
@@ -202,7 +276,7 @@ def main() -> int:
 		note("tasks/init-worktree.sh нет")
 
 	# ── 7. Разводка нового контура ──
-	print("7. Новый контур")
+	print("9. Новый контур")
 	wire = root / ".zcode" / "1c" / "scripts" / "wire_config.py"
 	if wire.is_file():
 		if apply:
@@ -223,7 +297,7 @@ def main() -> int:
 		FAILED.append("контур не вендорен в проект")
 
 	# ── 8. Критерий чистоты + готовность v8project к 0.13 ──
-	print("8. Критерий чистоты")
+	print("10. Критерий чистоты")
 	v8 = root / "v8project.yaml"
 	if v8.is_file():
 		try:
