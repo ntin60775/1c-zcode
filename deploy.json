@@ -47,7 +47,7 @@
       "if_exists": ".zcode/1c/scripts/wire_config.py"
     },
     {
-      "say": "Перезапусти сессию ZCode: hooks и MCP серверы (1c-testpilot, 1c-db) подключаются на старте сессии."
+      "say": "Перезапусти сессию ZCode: hooks и MCP серверы (1c-testpilot, 1c-db) подключаются на старте. Затем /1c-doctor — он проверяет и живость unica MCP (unica_ping: handshake + tools/list)."
     }
   ]
 }

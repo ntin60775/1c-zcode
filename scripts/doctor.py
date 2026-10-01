@@ -98,6 +98,29 @@ def main() -> int:
 		elif bootstrap.is_file():
 			ok(f"bootstrap исполняем ({cache_root.name})")
 
+	# живая проверка MCP: handshake + tools/list (без хоста и без 1С)
+	if "--no-ping" not in sys.argv and unica_entries:
+		ping_path = Path(__file__).resolve().parent / "unica_ping.py"
+		try:
+			done = subprocess.run(
+				[sys.executable, str(ping_path), "--timeout=180", "--json"],
+				capture_output=True, text=True, timeout=200)
+		except subprocess.TimeoutExpired:
+			warn("unica ping превысил общий таймаут — первый старт качает "
+			     "рантаймы; повтори /1c-doctor позже")
+		else:
+			import json as _json
+			try:
+				result = _json.loads(done.stdout.strip() or "{}")
+			except json.JSONDecodeError:
+				result = {"code": 1, "message": f"ping вывел не-JSON: {done.stdout[:120]}"}
+			if result.get("code") == 0:
+				ok(f"MCP жив: {result.get('message')}")
+			elif result.get("code") == 2:
+				warn(f"unica ping: {result.get('message')}")
+			else:
+				fail(f"unica MCP: {result.get('message')}")
+
 	# ── 2. 1c-testpilot ──
 	if shutil.which("1c-testpilot"):
 		ok("1c-testpilot в PATH")

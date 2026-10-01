@@ -39,6 +39,32 @@ Unica 0.13 публикуется кандидатом только на вет�
 Изменений в коде контура не требуется: сервер MCP у обоих каналов
 называется `unica`, гейты матчат `mcp__unica__*`.
 
+## Траблшутинг: «The MCP process failed to start / Connection closed»
+
+Симптом: в Settings → MCP у сервера `unica` красная точка, «process failed
+to start»; кнопка обновления плагина не помогает.
+
+Причина (наблюдено 2026-10-01): распаковчик кэша плагинов ZCode **не
+сохраняет exec-бит** — `bootstrap/bin/<target>/unica-bootstrap` лежит с
+правами `rw-rw-r--`, `launch.sh` падает на `exec` с «Permission denied».
+Появляется после каждой (пере)установки/обновления плагина юники — кэш
+пересоздаётся.
+
+Лечение (разово на машину, до фикса распаковщика):
+
+```bash
+chmod +x ~/.zcode/cli/plugins/cache/unica*/*/*/bootstrap/bin/*/* \
+  && python3 ~/.zcode/cli/plugins/cache/unica*/*/*/bootstrap/bin/linux-x64/unica-bootstrap --help 2>/dev/null; \
+  echo 'затем перезапусти ZCode (или пере-включи плагин unica)'
+```
+
+Проверка без хоста: `python3 .zcode/1c/scripts/unica_ping.py` — делает тот
+же handshake, что хост (initialize → tools/list), печатает версию сервера и
+глаголы; встроена в `/1c-doctor` (код 2 = первый старт качает рантаймы —
+повторить позже). Если после chmod сервер жив, но тормозит первый вызов —
+это докачиваются остальные артефакты манифеста (bsl-analyzer, v8-runner),
+`startup_timeout_sec: 900` даёт им время.
+
 ## Замечания
 
 - RC-обновления внутри next (`0.13.0-rc.3` → `rc.4`) — обычный Update
