@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # start_1c_db.sh — автоматический подъём MCP 1c-db (1c-mcp-toolkit):
 # запускает клиент 1С так, чтобы он сам открыл MCP_Toolkit.epf (канонический
-# автозапуск внешней обработки платформой, /Execute), и ждёт порт 6003.
-# Ручного открытия обработки нет.
+# автозапуск внешней обработки платформой, /Execute + параметр запуска
+# тулкита), и ждёт порт 6003. Ручного открытия обработки нет.
 #
 # Использование:
 #   start_1c_db.sh <project-root>            # поднять и дождаться :6003
@@ -12,13 +12,13 @@
 # Конфиг (.zcode/1c/contour.json → "1c_db"):
 #   url      — куда стучимся (по умолчанию http://127.0.0.1:6003/mcp)
 #   epf_path — путь к MCP_Toolkit.epf относительно корня проекта
-#              (по умолчанию tools/mcp/MCP_Toolkit.epf; в git не кладём —
-#              добавить в .gitignore при bootstrap)
+#              (по умолчанию tools/mcp/MCP_Toolkit.epf; в git не кладём)
 #
 # Платформа: первый существующий из —
-#   $1C_DB_PLATFORM → tools: path: из v8project.local.yaml →
-#   v8project.yaml tools: path: → клиент 1cv8c в /opt/1cv8/x86_64/*/
-# Строка подключения и пароли не печатаются.
+#   $ONEC_PLATFORM → tools: path: из v8project.local.yaml →
+#   v8project.yaml tools: path: → 1cv8c в /opt/1cv8/x86_64/*/
+# Строка подключения и пароли не печатаются (видны в cmdline клиента —
+# известное ограничение запуска через /IBConnectionString).
 set -euo pipefail
 
 ROOT="${1:-.}"
@@ -35,6 +35,13 @@ done
 HASH="$(printf '%s' "$ROOT" | sha1sum | cut -c1-8)"
 PIDFILE="/tmp/1c-db-$HASH.pid"
 LOG="/tmp/1c-db-$HASH.log"
+
+# ── hooks контура: репо (scripts/../hooks) или вендор (scripts/../../hooks) ──
+HOOKS_DIR=""
+for rel in "../../hooks" "../hooks"; do
+	cand="$(cd "$(dirname "${BASH_SOURCE[0]}")/$rel" 2>/dev/null && pwd)"
+	[[ -f "$cand/ib_lock.py" ]] && { HOOKS_DIR="$cand"; break; }
+done
 
 # ── контурные url/порт/epf ──
 read -r URL PORT EPF_REL < <(python3 - "$ROOT" <<'PY'
@@ -80,7 +87,7 @@ if [[ ! -f "$EPF" ]]; then
 fi
 
 # ── платформа ──
-CLIENT="${1C_DB_PLATFORM:-}"
+CLIENT="${ONEC_PLATFORM:-}"
 if [[ -z "$CLIENT" ]]; then
 	CLIENT="$(python3 - "$ROOT" <<'PY'
 import pathlib, sys
@@ -100,26 +107,23 @@ for name in ("v8project.local.yaml", "v8project.yaml"):
 PY
 )"
 fi
-for candidate in "$CLIENT" "$CLIENT/1cv8c" /opt/1cv8/x86_64/*/1cv8c; do
-	if [[ -n "$candidate" && -x "$candidate" ]]; then
+for candidate in "$CLIENT" "$CLIENT/1cv8c" "$CLIENT/1cv8" /opt/1cv8/x86_64/*/1cv8c; do
+	if [[ -n "$candidate" && -f "$candidate" ]]; then
 		CLIENT="$candidate"
 		break
 	fi
-	if [[ -n "$candidate" && -x "${candidate%/1cv8c}/1cv8c" ]]; then
-		CLIENT="${candidate%/1cv8c}/1cv8c"
-		break
-	fi
 done
-if [[ -z "$CLIENT" || ! -x "$CLIENT" ]]; then
+if [[ -z "$CLIENT" || ! -f "$CLIENT" ]]; then
 	echo "✗ клиент 1С (1cv8c) не найден: ни в v8project*.yaml, ни в /opt/1cv8/x86_64/*/" >&2
-	echo "  установи платформу или задай 1C_DB_PLATFORM" >&2
+	echo "  установи платформу или задай ONEC_PLATFORM" >&2
 	exit 2
 fi
 
 # ── строка подключения (не печатается; user/password из local-оверлея) ──
-CONN="$(python3 - "$ROOT" <<'PY'
+CONN="$(python3 - "$ROOT" "$HOOKS_DIR" <<'PY'
 import re, sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+if sys.argv[2]:
+    sys.path.insert(0, sys.argv[2])
 from ib_lock import resolve_infobase_connection
 root = pathlib.Path(sys.argv[1])
 conn = resolve_infobase_connection(str(root)) or ""
@@ -128,8 +132,9 @@ if f.is_file():
     text = f.read_text(encoding="utf-8")
     mu = re.search(r"(?m)^\s*user\s*:\s*['\"]?(.+?)\s*['\"]?\s*$", text)
     mp = re.search(r"(?m)^\s*password\s*:\s*['\"]?(.+?)\s*['\"]?\s*$", text)
-    if mu and "User=" not in conn:
-        conn += f';User="{mu.group(1)}"'
+    # канон строки подключения 1С: Usr= (не User=)
+    if mu and "Usr=" not in conn:
+        conn += f';Usr="{mu.group(1)}"'
     if mp and "Pwd=" not in conn:
         conn += f';Pwd="{mp.group(1)}"'
 print(conn)
@@ -140,28 +145,32 @@ if [[ -z "$CONN" ]]; then
 	exit 2
 fi
 
-# ── запуск и ожидание порта ──
-LAUNCH=("$CLIENT" ENTERPRISE /IBConnectionString "$CONN" /Execute "$EPF")
+# ── запуск ──
+# Клиент требует cwd корня базы (File=build/ib — относительный путь) и
+# x11-окружения (WAYLAND_DISPLAY ломает GTK; LibreGL — от чёрных окон под
+# Xvfb). Параметр /C — автостарт сервера тулкита (ПараметрЗапуска).
+LAUNCH=("$CLIENT" ENTERPRISE /IBConnectionString "$CONN" /Execute "$EPF"
+        /C "startup;mode=embedded;port=$PORT")
+CHILD_ENV=(env -u WAYLAND_DISPLAY GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1)
 if [[ $HEADLESS -eq 1 ]]; then
 	if ! command -v Xvfb >/dev/null 2>&1; then
 		echo "✗ --headless требует Xvfb" >&2
 		exit 2
 	fi
-	setsid Xvfb :97 -screen 0 1280x1024x24 >/dev/null 2>&1 &
+	setsid Xvfb :97 -screen 0 1920x1080x24 >/dev/null 2>&1 &
 	XVFB_PID=$!
-	DISPLAY_ARG=(":97")
-	set -- env DISPLAY=:97 "${LAUNCH[@]}"
-	setsid "$@" >"$LOG" 2>&1 &
-	echo $! > "$PIDFILE"
-	echo "• клиент запущен под Xvfb :97 (xvfb pid $XVFB_PID, клиент pid $(cat "$PIDFILE")); лог: $LOG"
+	CHILD_ENV+=(DISPLAY=:97)
+	echo "• Xvfb :97 поднят (pid $XVFB_PID)"
 else
-	setsid "${LAUNCH[@]}" >"$LOG" 2>&1 &
-	echo $! > "$PIDFILE"
-	echo "• клиент запущен (pid $(cat "$PIDFILE")); лог: $LOG"
+	CHILD_ENV+=(DISPLAY="${DISPLAY:-:0}")
 fi
+cd "$ROOT"
+setsid "${CHILD_ENV[@]}" "${LAUNCH[@]}" >"$LOG" 2>&1 &
+echo $! > "$PIDFILE"
+echo "• клиент запущен (pid $(cat "$PIDFILE")); лог: $LOG"
 
 echo -n "• жду порт $PORT "
-for _ in $(seq 1 60); do
+for _ in $(seq 1 90); do
 	if curl -so /dev/null --max-time 2 "$URL"; then
 		echo "— ✓ 1c-db отвечает: $URL"
 		exit 0
@@ -169,7 +178,9 @@ for _ in $(seq 1 60); do
 	printf '.'
 	sleep 2
 done
-echo "— ✗ не поднялся за 120с; смотри $LOG" >&2
-echo "  (клиенту нужна графика: в headless-среде — --headless; частая причина" >&2
-echo "   первого запуска — диалог аутентификации, если user/password не в оверлее)" >&2
+echo "— ✗ не поднялся за 180с; смотри $LOG" >&2
+echo "  частые причины первого запуска: диалог подтверждения NativeAPI-" >&2
+echo "  компоненты (нажми «Да» один раз — платформа запомнит), диалог" >&2
+echo "  аутентификации (user/password не в оверлее), чёрные окна без" >&2
+echo "  LIBGL_ALWAYS_SOFTWARE" >&2
 exit 1

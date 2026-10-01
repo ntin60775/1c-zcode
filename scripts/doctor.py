@@ -152,13 +152,28 @@ def main() -> int:
 	elif re.search(r"(?m)^infobase\s*:", v8text):
 		warn("v8project.yaml в форме 0.12 (infobase.connection) — 0.13 читает "
 		     "legacy на миграции, но лучше перейти на infobases.origin.connection")
-	# платформа: путь из v8project.yaml должен существовать; нет — скан
-	# /opt/1cv8/x86_64/*/: одна версия — готовая строка оверлея, несколько —
-	# вопрос пользователю, ноль — FAIL
-	match = re.search(r"(?m)^\s*path\s*:\s*['\"]?(/opt/1cv8/\S+?)['\"]?\s*$", v8text)
-	declared = match.group(1) if match else None
+	# платформа: заявленная — из local-оверлея (машинное решение) или
+	# v8project.yaml; не существует — скан /opt/1cv8/x86_64/*/: одна версия —
+	# готовая строка оверлея, несколько — вопрос пользователю, ноль — FAIL
+	local_platform = ""
+	local_file = root / "v8project.local.yaml"
+	if local_file.is_file():
+		try:
+			local_platform = next(
+				(line.split("path:", 1)[1].strip().strip("'\"")
+				 for line in local_file.read_text(encoding="utf-8").splitlines()
+				 if line[:1] in (" ", "\t") and line.strip().startswith("path:")
+				 and "/opt/1cv8/" in line),
+				"")
+		except OSError:
+			pass
+	declared = local_platform or next(
+		(match.group(1) for match in
+		 (re.search(r"(?m)^\s*path\s*:\s*['\"]?(/opt/1cv8/\S+?)['\"]?\s*$", v8text),)
+		 if match), None)
 	if declared and Path(declared).exists():
-		ok(f"платформа на месте: {declared}")
+		source = "локальный оверлей" if local_platform else "v8project.yaml"
+		ok(f"платформа на месте ({source}): {declared}")
 	elif declared:
 		found = sorted(str(p) for p in Path("/opt/1cv8/x86_64").glob("*/1cv8")) \
 			if Path("/opt/1cv8/x86_64").is_dir() else []
@@ -166,11 +181,11 @@ def main() -> int:
 			fail(f"платформа из v8project.yaml не найдена: {declared}, "
 			     "и в /opt/1cv8/x86_64/ платформ нет — установи нужную версию")
 		elif len(found) == 1:
-			warn(f"v8project.yaml указывает несуществующую платформу {declared}; "
+			warn(f"заявленная платформа не найдена: {declared}; "
 			     f"установлена одна — {found[0]}. Пропиши её в v8project.local.yaml: "
 			     f"tools: path: {found[0]}")
 		else:
-			warn("v8project.yaml указывает несуществующую платформу "
+			warn("заявленная платформа не найдена "
 			     f"{declared}; установлено несколько — выбери с пользователем: "
 			     + "; ".join(found))
 	else:
