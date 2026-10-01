@@ -32,12 +32,11 @@ from pathlib import Path
 from contour_common import (
 	SOURCE_PREFIXES,
 	audit,
-	mcp_short_name,
 	project_root,
 	read_event,
 	session_id,
 	session_state_dir,
-	unica_server_name,
+	unica_verb,
 	unica_tools,
 )
 
@@ -161,7 +160,7 @@ def handle_pre(event: dict) -> int:
 	sid = session_id(event)
 	root = project_root(cwd)
 	tools = unica_tools(root)
-	short = mcp_short_name(tool_name, unica_server_name(root))
+	short = unica_verb(tool_name, root)
 	state = load_state(sid)
 
 	# ── вызовы юники ──
@@ -218,7 +217,7 @@ def handle_post(event: dict) -> int:
 	cwd = str(event.get("cwd") or "")
 	sid = session_id(event)
 	root = project_root(cwd)
-	short = mcp_short_name(tool_name, unica_server_name(root))
+	short = unica_verb(tool_name, root)
 	if short not in set(unica_tools(root).get("docs") or []):
 		return 0
 	state = load_state(sid)

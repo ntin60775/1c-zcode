@@ -141,6 +141,21 @@ def mcp_short_name(tool_name: str, server: str) -> str:
 	return tool_name[len(prefix):] if tool_name.startswith(prefix) else ""
 
 
+def unica_verb(tool_name: str, root: str) -> str:
+	"""Глагол юники из полного имени инструмента; '' — не юника.
+
+    Фактические имена tools/list 0.13.0-rc.3 несут префикс внутри имени:
+    'unica.apply', 'unica.run', … то есть хост видит
+    mcp__unica__unica.apply. Здесь отрезаем mcp__unica__ и необязательный
+    'unica.' — остаётся глагол (apply/run/docs/…), с которым сравнивают
+    наборы UNICA_TOOLS_DEFAULT.
+    """
+	short = mcp_short_name(tool_name, unica_server_name(root))
+	if short.startswith("unica."):
+		short = short[len("unica."):]
+	return short
+
+
 # Поверхность юники 0.13: run/view/check/apply/search/docs/diff/resolve/task.*
 # (0.12-имена runtime_execute/code_patch/documentation_search retir'нуты).
 # Контракт объявлен словарём unica.run {} — имена здесь карта по умолчанию,

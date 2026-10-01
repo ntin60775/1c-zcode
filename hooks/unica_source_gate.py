@@ -44,12 +44,11 @@ from contour_common import (
 	SOURCE_PREFIXES,
 	audit,
 	is_agents_doc,
-	mcp_short_name,
 	normalize_source_path,
 	project_root,
 	read_event,
 	session_id,
-	unica_server_name,
+	unica_verb,
 	unica_tools,
 )
 from ib_lock import acquire_base_lock, describe_holder, release_base_lock, resolve_infobase_connection
@@ -181,8 +180,7 @@ def missing_worktree_workspace(directory: str) -> list:
 
 def unica_call(tool_name: str, tool_input: dict, cwd: str):
 	"""(короткое_имя, аргументы, cwd_вызова) для вызова юники; None — не юника."""
-	root = project_root(cwd)
-	short = mcp_short_name(tool_name, unica_server_name(root))
+	short = unica_verb(tool_name, project_root(cwd))
 	if not short:
 		return None
 	args = tool_input if isinstance(tool_input, dict) else {}

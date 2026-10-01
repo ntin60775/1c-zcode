@@ -88,6 +88,15 @@ def main() -> int:
 			ok(f"unica {version} ({key}) >= {UNICA_MIN}")
 		else:
 			fail(f"unica {version} < минимальной {UNICA_MIN}")
+	# exec-бит bootstrap: распаковщик кэша ZCode не сохраняет права —
+	# без бита launch.sh падает «Permission denied», MCP не стартует
+	for cache_root in sorted((Path.home() / ".zcode" / "cli" / "plugins" / "cache").glob("unica*/*/")):
+		bootstrap = cache_root / "bootstrap" / "bin" / "linux-x64" / "unica-bootstrap"
+		if bootstrap.is_file() and not os.access(str(bootstrap), os.X_OK):
+			fail(f"нет exec-бита: {bootstrap} — MCP юники не стартует; "
+			     f"лечится: chmod +x '{cache_root}/bootstrap/bin/'*/*/unica-bootstrap*")
+		elif bootstrap.is_file():
+			ok(f"bootstrap исполняем ({cache_root.name})")
 
 	# ── 2. 1c-testpilot ──
 	if shutil.which("1c-testpilot"):
