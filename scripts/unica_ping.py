@@ -24,7 +24,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+for _rel in ("../../hooks", "../hooks"):
+	_p = (Path(__file__).resolve().parent / _rel).resolve()
+	if (_p / "contour_common.py").is_file():
+		sys.path.insert(0, str(_p))
 
 HANDSHAKE = (
 	'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"1c-zcode-doctor","version":"0"}}}\n'

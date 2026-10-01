@@ -23,7 +23,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+# contour hooks доступны в обеих раскладках: репо (scripts/../hooks) и
+# вендоренной (.zcode/1c/scripts/../../hooks)
+for _rel in ("../../hooks", "../hooks"):
+	_p = (Path(__file__).resolve().parent / _rel).resolve()
+	if (_p / "contour_common.py").is_file():
+		sys.path.insert(0, str(_p))
+
 from contour_common import contour_config
 
 UNICA_MIN = "0.13.0"
