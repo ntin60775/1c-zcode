@@ -51,8 +51,12 @@
    скиллы (`unica:cf-init`, `unica:cfe-init` и др.) — дублировать нечего;
    наш bootstrap ссылается на них.
 2. **Vanessa/YAxUnit-обвязка** (`test-yaxunit.sh`, `xvfb-run-1c.sh`,
-   `yaxunit.json`, VAParams-генератор): полный переход на testpilot;
-   legacy-файлы проектов не удаляются, помечаются legacy при миграции.
+   `yaxunit.json`, VAParams-генератор): полный переход на testpilot.
+   Снимает мигратор (шаг 5.5): фичи и VAParams → `docs/omp-migrated/tests/`
+   (источник конвертации в pytest-e2e), шаблоны фич, `tasks/mcp`,
+   Vanessa-epf, ключи `tests:`/`va` в v8project.yaml — снос. Юнит-расширение
+   («Тесты») не переносится принципиально: смысловые проверки → e2e, затем
+   снос source-set. Канон конвертации — скилл `1c-test-contour`.
 3. **`UserPromptSubmit`-пуши** (замена TTSR): не делаем без доказанной нужды.
 4. **Юнит-тесты от агента**: не поддерживаются контуром (внутренний оракул) —
    e2e + ЖР вместо них.

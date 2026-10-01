@@ -60,6 +60,11 @@ const goal = String(args.goal ?? "");
 const profile = String(args.profile ?? "main");
 const name = String(args.name ?? "");
 if (!goal) throw new Error("Задай args.goal: какой бизнес-поток фиксировать e2e-тестом");
+const vanessaHint =
+	"Если goal — конвертация Vanessa-фичи из docs/omp-migrated/tests/features/: " +
+	"шаги Дано/Когда/Тогда фичи — твой план; имена элементов фичи проверяй живой " +
+	"разведкой, параметры ищи в docs/omp-migrated/tests/VAParams.json. " +
+	"После зелёного прогона и коммита теста удали фичу из архива (git rm).\n\n";
 
 phase("Автор пишет и отлаживает e2e-тест");
 const author = agent("автор e2e-теста", {
@@ -100,7 +105,7 @@ const author = agent("автор e2e-теста", {
 		"Справка по API и граблям: скилл .zcode/skills/1c-test-contour/SKILL.md. Отвечай по-русски.",
 });
 const authored = await author.ask<AuthorResult>(
-	"Напиши e2e-тест по требованию:\n" + goal + "\n\n" +
+	"Напиши e2e-тест по требованию:\n" + vanessaHint + goal + "\n\n" +
 		(name ? "Имя файла: tests/e2e/test_" + name + ".py. " : "Имя файла — tests/e2e/test_<kebab>.py, выбери сам. ") +
 		"Профиль: " + profile + ". Разведи форму живьём, напиши тест, прогони до зелёного, закоммить файл. " +
 		"Верни типизированный результат. Отвечай по-русски.",

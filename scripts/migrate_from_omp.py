@@ -19,6 +19,11 @@
      сложный остаётся — 0.13 читает legacy).
   5. Правила проекта переезжают: .omp/rules/*.md → docs/omp-migrated/rules/
      (git mv; смысловое из RULES.md покрывает секция контура).
+  5.5 Старый тест-стек (Vanessa/xUnit): фичи features/*.feature →
+     docs/omp-migrated/tests/features/ (источник конвертации в pytest-e2e);
+     VAParams/yaxunit-конфиги → docs/omp-migrated/tests/; шаблоны фич,
+     tasks/mcp, Vanessa-epf, ключи tests:/va в v8project.yaml — снос.
+     Юнит-расширение (Тесты) не переносится принципиально — задача в отчёт.
   6. Удалить .omp/ целиком: tracked — git rm, ignored (plugins/, backup) — rm.
   7. .gitignore: убрать строки omp-блока (.omp/…).
   8. tasks/init-worktree.sh: перепривязать на .zcode/1c/scripts/init_worktree.sh.
@@ -42,7 +47,8 @@ SECTION_BEGIN = "<!-- BEGIN 1C CONTOUR (1c-zcode) -->"
 SECTION_END = "<!-- END 1C CONTOUR -->"
 LEGACY_MARKERS = ("tasks/mcp", "tools/yaxunit.json", "tools/VAParams.json",
                   "features/")
-CLEAN_GREP = re.compile(r"\.omp\b|omp plugin|unica-gate\.ts|~/\.omp")
+CLEAN_GREP = re.compile(
+	r"\.omp\b|omp plugin|unica-gate\.ts|~/\.omp|vanessa|yaxunit|VAParams", re.IGNORECASE)
 
 PLANNED = []
 DONE = []
@@ -235,7 +241,123 @@ def main() -> int:
 	else:
 		note(".omp/rules/ нет")
 
-	# ── 6. Удаление .omp/ ──
+	# ── 5.5 Старый тест-стек (xUnit/Vanessa): активы переехали, инфраструктура сносится ──
+	print("5.5 Старый тест-стек (Vanessa/xUnit)")
+	dst_features = root / "docs" / "omp-migrated" / "tests" / "features"
+	features_dir = root / "features"
+	if features_dir.is_dir():
+		fl = sorted(features_dir.glob("**/*.feature"))
+		if apply:
+			dst_features.mkdir(parents=True, exist_ok=True)
+		moved = 0
+		for f in fl:
+			target = dst_features / f.relative_to(features_dir)
+			if apply:
+				target.parent.mkdir(parents=True, exist_ok=True)
+				if tracked(root, str(f.relative_to(root))):
+					run_git(root, "mv", str(f.relative_to(root)), str(target))
+				else:
+					import shutil
+					shutil.move(str(f), str(target))
+				DONE.append(str(target))
+			moved += 1
+		if moved:
+			note(f"фичи ({moved}) → docs/omp-migrated/tests/features/ — ИСТОЧНИК конвертации "
+			     "в pytest-e2e (скилл 1c-test-contour, «Перенос Vanessa-сценариев»); "
+			     "после зелёного прогона конвертированного теста фичу из архива удаляй")
+		else:
+			note("features/ пуст")
+		if apply:
+			for d in sorted((p for p in features_dir.rglob("*") if p.is_dir()),
+			                key=lambda x: len(str(x)), reverse=True):
+				if not any(d.iterdir()):
+					d.rmdir()
+			if not any(features_dir.iterdir()):
+				features_dir.rmdir()
+				DONE.append("rmdir features/")
+		import shutil as _sh
+		for tpl in sorted((root / "fixtures" / "шаблоны-фич").glob("*")) if (root / "fixtures" / "шаблоны-фич").is_dir() else []:
+			if apply:
+				if tracked(root, str(tpl.relative_to(root))):
+					run_git(root, "rm", "-q", str(tpl.relative_to(root)))
+				else:
+					tpl.unlink()
+			note(f"снести шаблон фичи: {tpl.relative_to(root)} (болванка Vanessa, не актив)")
+	else:
+		note("features/ нет")
+
+	for rel in ("tools/VAParams.json", "tools/yaxunit.json"):
+		p = root / rel
+		if p.is_file():
+			target = root / "docs" / "omp-migrated" / "tests" / p.name
+			if apply:
+				target.parent.mkdir(parents=True, exist_ok=True)
+				if tracked(root, rel):
+					run_git(root, "mv", rel, str(target))
+				else:
+					import shutil
+					shutil.move(str(p), str(target))
+				DONE.append(str(target))
+			note(f"{rel} → docs/omp-migrated/tests/{p.name} (параметры/таймауты — контекст конвертации)")
+	for rel in ("tasks/mcp",):
+		if (root / rel).exists():
+			if apply:
+				remove_path(root, rel, apply=True)
+			else:
+				note(f"снести: {rel} (замещает MCP 1c-db)")
+	epf = root / "build" / "tools" / "vanessa-automation-single.epf"
+	if epf.is_file() and apply:
+		epf.unlink()
+		DONE.append(str(epf))
+		note("снести build/tools/vanessa-automation-single.epf (обработка Vanessa)")
+
+	# v8project.yaml: тест-блоки старого стека (tests: c yaxunit/va; va-подблоки)
+	v8 = root / "v8project.yaml"
+	if v8.is_file():
+		lines = v8.read_text(encoding="utf-8").splitlines()
+		out, drop_tests, drop_va = [], False, False
+		changed_stack = []
+		i = 0
+		while i < len(lines):
+			ln = lines[i]
+			if re.match(r"^tests\s*:", ln):
+				block, keys, j = [], [], i + 1
+				while j < len(lines) and lines[j][:1] in (" ", "\t"):
+					if lines[j][:2] == "  " and lines[j][2:3] not in (" ", "\t"):
+						keys.append(lines[j].split(":", 1)[0].strip())
+					block.append(lines[j]); j += 1
+				if keys and set(keys) <= {"yaxunit", "va"}:
+					changed_stack.append(f"убран блок tests: ({', '.join(keys)} — стек старого контура)")
+					i = j
+					continue
+				else:
+					changed_stack.append("block tests: содержит посторонние ключи — НЕ тронут, разбери руками")
+					out.append(ln); out.extend(block); i = j
+					continue
+			if re.match(r"^\s*va\s*:\s*$", ln):
+				indent = len(ln) - len(ln.lstrip())
+				block, j = [ln], i + 1
+				while j < len(lines) and (not lines[j].strip()
+						or len(lines[j]) - len(lines[j].lstrip()) > indent):
+					block.append(lines[j]); j += 1
+				body = "\n".join(block)
+				if "vanessa" in body.lower() or "VAParams" in body:
+					changed_stack.append("убран va-подблок (vanessa epf/параметры)")
+					i = j
+					continue
+			out.append(ln); i += 1
+		if apply and changed_stack:
+			v8.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8")
+			DONE.append("v8project.yaml (тест-стек)")
+		for entry in changed_stack:
+			note(f"v8project.yaml: {entry}")
+		src_test = (root / "tests" / "cfe" / "Тесты").is_dir() or "Тесты" in "\n".join(lines)
+		if src_test:
+			note("расширение юнит-тестов (tests/cfe/Тесты) НЕ переносится принципиально "
+			     "(контур: e2e + ЖР, юниты агент не пишет); перенеси смысловые проверки "
+			     "в e2e-сценарии, затем снеси source-set «Тесты»")
+
+
 	print("6. Старый контур .omp/")
 	omp_entries = sorted(p.name for p in omp.iterdir())
 	note(f"удалить целиком {OMP_DIR}/ ({', '.join(omp_entries)})")
@@ -335,10 +457,17 @@ def main() -> int:
 		note("после применения: grep-проверка остаточных упоминаний старого контура")
 
 	print()
-	legacy = [m for m in LEGACY_MARKERS if (root / m).exists()]
+	# пустые каталоги после переноса/сноса — убрать, чтобы не числились legacy
+	for empty in ("features", "fixtures/шаблоны-фич", "fixtures", "tools"):
+		p = root / empty
+		if p.is_dir() and not any(p.iterdir()) and apply:
+			p.rmdir()
+			DONE.append(f"rmdir {empty}/")
+	legacy = [m for m in LEGACY_MARKERS if (root / m).is_dir() and any((root / m).iterdir())]
 	if legacy:
 		print(f"Legacy-артефакты старого тест-стека (не удаляются, вне нового контура): {', '.join(legacy)}")
-		print("  features/ удаляются после покрытия testpilot-сценариями; tasks/mcp замещает MCP 1c-db.")
+		print("  Vanessa-активы конвертируются в tests/e2e (скилл 1c-test-contour), "
+		      "затем удаляются из docs/omp-migrated/tests/.")
 	print()
 	if not apply:
 		print("DRY-RUN завершён. Применить: --apply")
