@@ -144,10 +144,11 @@ def mcp_short_name(tool_name: str, server: str) -> str:
 def unica_verb(tool_name: str, root: str) -> str:
 	"""Глагол юники из полного имени инструмента; '' — не юника.
 
-    Живые формы (проверено 2026-10-01): plugin-обёртка хоста даёт
-    mcp__plugin_unica_unica__unica.apply, прямой сервер — mcp__unica__unica.run.
-    Имена tools/list несут префикс внутри: unica.apply. Отрезаем всё до
-    последнего __ (обёртка+сервер), затем необязательный 'unica.'.
+    Живые формы (стенд 2026-10-01): plugin-обёртка хоста даёт
+    mcp__plugin_unica_unica__unica_run — хост заменяет точку в имени
+    инструмента на подчёркивание, поэтому глагол может прийти и как
+    'unica_run', и как 'unica.apply'. Отрезаем всё до последнего __
+    (обёртка+сервер), затем необязательный префикс 'unica.' / 'unica_'.
     """
 	if not tool_name.startswith("mcp__") or "__" not in tool_name[5:]:
 		return ""
@@ -157,9 +158,13 @@ def unica_verb(tool_name: str, root: str) -> str:
 	server = unica_server_name(root)
 	if server not in middle.split("_") and "unica" not in middle.split("_"):
 		return ""
-	if short.startswith("unica."):
-		short = short[len("unica."):]
-	return short
+	for prefix in ("unica.", "unica_"):
+		if short.startswith(prefix):
+			short = short[len(prefix):]
+			break
+	# хост заменяет точки на подчёркивания во всём имени: unica.task.get
+	# приходит как unica_task_get; после среза префикса возвращаем точки
+	return short.replace("_", ".")
 
 
 # Поверхность юники 0.13: run/view/check/apply/search/docs/diff/resolve/task.*

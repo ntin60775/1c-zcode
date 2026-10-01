@@ -161,7 +161,30 @@ elif [[ "$CONNECTION" == File=* ]]; then
 		COPY_HASHES=0
 	elif [[ -d "$MAIN_IB" ]]; then
 		echo "• копирую файловую базу из основного дерева: $REL ($(du -sh "$MAIN_IB" 2>/dev/null | cut -f1))…"
-		cp -a "$MAIN_IB" "$IB"
+		# Толерантная копия: в базе бывают 0-байтовые заглушки чужого UID
+		# (1CHelpIndex в distrobox) — cp -a на них рвёт set -e. Копируем
+		# по-файлово, нечитаемое пропускаем с предупреждением (это
+		# регенерируемые индексы платформы, базе они не нужны).
+		mkdir -p "$IB"
+		if cp -a "$MAIN_IB/." "$IB/" 2>/dev/null; then
+			:
+		else
+			SKIPPED=0
+			while IFS= read -r -d '' src; do
+				rel="${src#"$MAIN_IB"/}"
+				dest="$IB/$rel"
+				if [[ -d "$src" ]]; then
+					mkdir -p "$dest"
+				elif cp -p "$src" "$dest" 2>/dev/null; then
+					:
+				else
+					SKIPPED=$((SKIPPED + 1))
+					[[ $SKIPPED -le 5 ]] && echo "  ⚠ пропущено (не читается): $rel" >&2
+				fi
+			done < <(find "$MAIN_IB" -print0)
+			[[ $SKIPPED -gt 5 ]] && echo "  ⚠ …и ещё $((SKIPPED - 5)) файлов пропущено" >&2
+			[[ $SKIPPED -gt 0 ]] && echo "• пропущено нечитаемых: $SKIPPED (обычно 1CHelpIndex — регенерируется)"
+		fi
 		echo "✓ база скопирована"
 	else
 		echo "✗ файловой базы нет ни в ворктри, ни в основном дереве: $REL" >&2

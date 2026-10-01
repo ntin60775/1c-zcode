@@ -112,6 +112,15 @@ def main() -> int:
 		        {"ops": [{"op": "code.replace", "anchor": "Z", "code": "…"}]})
 		check("plugin-обёртка: флаг сброшен структурной", r.returncode == 2, f"exit {r.returncode}")
 
+		# ── живая подчёркнутая форма: mcp__plugin_unica_unica__unica_run ──
+		docs("подчёркнутая форма")
+		r = pre("mcp__plugin_unica_unica__unica_run",
+		        {"args": {"op": "push", "force": True, "sourceSet": "main"}})
+		check("unica_run: push со сверкой проходит", r.returncode == 0, f"exit {r.returncode}")
+		r = pre("mcp__plugin_unica_unica__unica_run",
+		        {"args": {"op": "push", "force": True, "sourceSet": "main"}})
+		check("unica_run: push без свежей сверки блокируется", r.returncode == 2, f"exit {r.returncode}")
+
 		# ── состояние сессионно: другая сессия не наследует сверку ──
 		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]}, sid="s2")
 		check("другая сессия начинает без сверки", r.returncode == 2, f"exit {r.returncode}")
