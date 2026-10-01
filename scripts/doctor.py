@@ -219,13 +219,20 @@ def main() -> int:
 	except (OSError, json.JSONDecodeError):
 		db_url = None
 	if db_url:
-		import urllib.request
+		import urllib.error, urllib.request
 		try:
 			urllib.request.urlopen(db_url, timeout=3)
 			ok(f"1c-db отвечает: {db_url}")
+		except urllib.error.HTTPError as e:
+			# 406 — норма для MCP Streamable HTTP на голом GET (нет Accept)
+			if e.code == 406:
+				ok(f"1c-db отвечает (406 на GET без Accept — норма): {db_url}")
+			else:
+				ok(f"1c-db отвечает (HTTP {e.code}): {db_url}")
 		except Exception:
-			warn(f"1c-db не отвечает ({db_url}) — подними клиент с обработкой: "
-			     "python3 .zcode/1c/scripts/start_1c_db.sh . (или --headless)")
+			warn(f"1c-db не отвечает ({db_url}) — подними: python3 "
+			     ".zcode/1c/scripts/start_1c_db.sh . (Linux: сам поднимет "
+			     "прокси и клиент с mode=proxy; install_1c_mcp_proxy.sh один раз)")
 
 	# ── 4. Стайл-чекер ──
 	style_paths = (
