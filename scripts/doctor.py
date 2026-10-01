@@ -23,6 +23,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+from contour_common import contour_config
+
 UNICA_MIN = "0.13.0"
 CONTOUR_SKILLS = {"1c-contour", "1c-test-contour", "1c-db-data",
                   "1c-project-bootstrap", "bsp"}
@@ -138,11 +141,32 @@ def main() -> int:
 			fail("v8project.yaml: ключ builder отвергается схемой 0.13 — убери его, "
 			     "исполнителя задавай per-operation providers (файловая — ibcmd, "
 			     "серверная — designer); пока он там, unica.run не примет конфиг")
-		if re.search(r"(?m)^infobases\s*:", v8text):
-			ok("связь базы в форме 0.13 (infobases.origin)")
-		elif re.search(r"(?m)^infobase\s*:", v8text):
-			warn("v8project.yaml в форме 0.12 (infobase.connection) — 0.13 читает "
-			     "legacy на миграции, но лучше перейти на infobases.origin.connection")
+	if re.search(r"(?m)^infobases\s*:", v8text):
+		ok("связь базы в форме 0.13 (infobases.origin)")
+	elif re.search(r"(?m)^infobase\s*:", v8text):
+		warn("v8project.yaml в форме 0.12 (infobase.connection) — 0.13 читает "
+		     "legacy на миграции, но лучше перейти на infobases.origin.connection")
+	# платформа: путь из v8project.yaml должен существовать; нет — скан
+	# /opt/1cv8/x86_64/*/: одна версия — готовая строка оверлея, несколько —
+	# вопрос пользователю, ноль — FAIL
+	match = re.search(r"(?m)^\s*path\s*:\s*['\"]?(/opt/1cv8/\S+?)['\"]?\s*$", v8text)
+	declared = match.group(1) if match else None
+	if declared and Path(declared).exists():
+		ok(f"платформа на месте: {declared}")
+	elif declared:
+		found = sorted(str(p) for p in Path("/opt/1cv8/x86_64").glob("*/1cv8")) \
+			if Path("/opt/1cv8/x86_64").is_dir() else []
+		if not found:
+			fail(f"платформа из v8project.yaml не найдена: {declared}, "
+			     "и в /opt/1cv8/x86_64/ платформ нет — установи нужную версию")
+		elif len(found) == 1:
+			warn(f"v8project.yaml указывает несуществующую платформу {declared}; "
+			     f"установлена одна — {found[0]}. Пропиши её в v8project.local.yaml: "
+			     f"tools: path: {found[0]}")
+		else:
+			warn("v8project.yaml указывает несуществующую платформу "
+			     f"{declared}; установлено несколько — выбери с пользователем: "
+			     + "; ".join(found))
 	else:
 		fail("v8project.yaml не найден — это не проект 1С или файл не создан")
 
@@ -167,6 +191,20 @@ def main() -> int:
 		ok("profiles.yaml testpilot на месте")
 	else:
 		fail(".zcode/testpilot/profiles.yaml нет — e2e-контур не поднимется")
+
+	# 1c-db жив? (нужен клиент 1С с открытой MCP_Toolkit.epf)
+	try:
+		db_url = (json.loads((root / ".zcode" / "1c" / "contour.json").read_text(encoding="utf-8")).get("1c_db") or {}).get("url")
+	except (OSError, json.JSONDecodeError):
+		db_url = None
+	if db_url:
+		import urllib.request
+		try:
+			urllib.request.urlopen(db_url, timeout=3)
+			ok(f"1c-db отвечает: {db_url}")
+		except Exception:
+			warn(f"1c-db не отвечает ({db_url}) — подними клиент с обработкой: "
+			     "python3 .zcode/1c/scripts/start_1c_db.sh . (или --headless)")
 
 	# ── 4. Стайл-чекер ──
 	style_paths = (
