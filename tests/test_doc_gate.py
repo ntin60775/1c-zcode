@@ -100,6 +100,18 @@ def main() -> int:
 		r = pre("Write", {"file_path": "docs/notes.md", "content": ""})
 		check("правка вне исходников не предмет гейта", r.returncode == 0, f"exit {r.returncode}")
 
+		# ── plugin-обёртка хоста: mcp__plugin_unica_unica__unica.apply ──
+		docs("plugin-обёртка")
+		r = pre("mcp__plugin_unica_unica__unica.apply",
+		        {"ops": [{"op": "code.replace", "anchor": "Z", "code": "…"}]})
+		check("plugin-обёртка: apply со сверкой проходит", r.returncode == 0, f"exit {r.returncode}")
+		r = pre("mcp__plugin_unica_unica__unica.apply",
+		        {"ops": [{"op": "meta.addAttribute", "object": "Справочник.X"}]})
+		check("plugin-обёртка: структурная мутация прошла", r.returncode == 0, f"exit {r.returncode}")
+		r = pre("mcp__plugin_unica_unica__unica.apply",
+		        {"ops": [{"op": "code.replace", "anchor": "Z", "code": "…"}]})
+		check("plugin-обёртка: флаг сброшен структурной", r.returncode == 2, f"exit {r.returncode}")
+
 		# ── состояние сессионно: другая сессия не наследует сверку ──
 		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]}, sid="s2")
 		check("другая сессия начинает без сверки", r.returncode == 2, f"exit {r.returncode}")

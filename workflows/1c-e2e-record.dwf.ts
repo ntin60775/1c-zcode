@@ -1,17 +1,15 @@
 /* zcode-workflow
-name: 1c-e2e-record
-description: Ассистированная запись e2e-сценария 1С: тест-клиент поднимается, человек водит сессию, агент останавливает запись, сохраняет XML-сценарий и проверяет его реплеем.
-whenToUse: когда нужен новый e2e-сценарий testpilot с внешним оракулом — записать реальную человеческую сессию (record-first), а не сочинять шаги агентом.
-scope: project
 args:
   profile:
     type: string
-    description: Имя профиля тестовой базы в profiles.yaml.
-    default: main
+    description: "Имя профиля тестовой базы в profiles.yaml"
+    default: "main"
   name:
     type: string
-    description: Имя сценария (файл .zcode/testpilot/scenarios/<name>.xml).
+    description: "Имя сценария (файл .zcode/testpilot/scenarios/<name>.xml)"
     required: true
+description: "Ассистированная запись e2e-сценария 1С: клиент поднимается, человек водит сессию, агент сохраняет XML и проверяет реплеем"
+whenToUse: "Нужен новый e2e-сценарий testpilot с внешним оракулом — записать реальную человеческую сессию (record-first), а не сочинять шаги агентом"
 */
 
 // Record-first: канонический сценарий пишет человек в живой сессии, агент —

@@ -144,13 +144,19 @@ def mcp_short_name(tool_name: str, server: str) -> str:
 def unica_verb(tool_name: str, root: str) -> str:
 	"""Глагол юники из полного имени инструмента; '' — не юника.
 
-    Фактические имена tools/list 0.13.0-rc.3 несут префикс внутри имени:
-    'unica.apply', 'unica.run', … то есть хост видит
-    mcp__unica__unica.apply. Здесь отрезаем mcp__unica__ и необязательный
-    'unica.' — остаётся глагол (apply/run/docs/…), с которым сравнивают
-    наборы UNICA_TOOLS_DEFAULT.
+    Живые формы (проверено 2026-10-01): plugin-обёртка хоста даёт
+    mcp__plugin_unica_unica__unica.apply, прямой сервер — mcp__unica__unica.run.
+    Имена tools/list несут префикс внутри: unica.apply. Отрезаем всё до
+    последнего __ (обёртка+сервер), затем необязательный 'unica.'.
     """
-	short = mcp_short_name(tool_name, unica_server_name(root))
+	if not tool_name.startswith("mcp__") or "__" not in tool_name[5:]:
+		return ""
+	middle, short = tool_name[5:].rsplit("__", 1)
+	if not short:
+		return ""
+	server = unica_server_name(root)
+	if server not in middle.split("_") and "unica" not in middle.split("_"):
+		return ""
 	if short.startswith("unica."):
 		short = short[len("unica."):]
 	return short

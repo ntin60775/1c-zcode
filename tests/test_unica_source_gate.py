@@ -166,6 +166,21 @@ def main() -> int:
 		r = pre("mcp__1c-db__execute_query", {"query": "ВЫБРАТЬ 1"})
 		check("вызов не-yunica MCP проходит", r.returncode == 0, f"exit {r.returncode}")
 
+		# ── plugin-обёртка хоста: mcp__plugin_unica_unica__unica.apply ──
+		r = pre("mcp__plugin_unica_unica__unica.run",
+		        {"args": {"op": "launch", "cwd": cwd}})
+		check("plugin-обёртка: нейтральный op проходит", r.returncode == 0, f"exit {r.returncode}")
+		zdir2 = tree / ".zcode" / "1c"
+		(zdir2).mkdir(parents=True, exist_ok=True)
+		(zdir2 / "contour.json").write_text(json.dumps(REBUILD_RULES, ensure_ascii=False), encoding="utf-8")
+		r = pre("mcp__plugin_unica_unica__unica.run",
+		        {"args": {"op": "push", "force": True, "sourceSet": "Тесты", "cwd": cwd}})
+		check("plugin-обёртка: rebuild-правило срабатывает", r.returncode == 2, f"exit {r.returncode}")
+		r = pre("mcp__plugin_unica_unica__unica.run",
+		        {"args": {"op": "push", "force": True, "sourceSet": "Тесты", "full": True, "cwd": cwd}})
+		check("plugin-обёртка: с full проходит", r.returncode == 0, f"exit {r.returncode}")
+		(zdir2 / "contour.json").unlink()
+
 		# ── ворктри без инициализации ──
 		wt = tmp_path / "wt"
 		wt.mkdir()
@@ -214,3 +229,6 @@ def main() -> int:
 
 if __name__ == "__main__":
 	sys.exit(main())
+
+# Примечание: живая форма имён инструментов юники в хосте —
+# mcp__plugin_unica_unica__unica.apply (обёртка плагина); покрывается ниже.
