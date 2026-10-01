@@ -4,7 +4,8 @@
 Гейт гоняется как процесс — ровно так, как его вызывает ZCode; журнал
 перенаправляется во временный каталог через ZCODE_1C_STATE_DIR. Платформа
 и база 1С не нужны: покрываются маршрутизация правки, эскалации, bash,
-инварианты пересборки, ворктри и замок на инфобазу.
+ворктри, замок на инфобазу и правила пересборки из contour.json
+(по умолчанию нейтральны — semantics 0.13, до сверки на стенде).
 
 Запуск: python3 tests/test_unica_source_gate.py
 """
@@ -30,6 +31,23 @@ source-set:
     path: src/cfe/Тесты
 """
 
+REBUILD_RULES = {
+	"unica": {
+		"rebuild_rules": [
+			{
+				"tool": "run", "op": "push", "source_sets": "extensions",
+				"require": {"full": True},
+				"message": "Частичная загрузка расширений в этом проекте не работает — push только с full:true.",
+			},
+			{
+				"tool": "run", "op": "push", "source_sets": "main",
+				"forbid": {"full": True},
+				"message": "Полная пересборка основной конфигурации запрещена — десятки минут.",
+			},
+		],
+	},
+}
+
 
 def make_tree(tmp: Path) -> Path:
 	tree = tmp / "tree"
@@ -37,12 +55,6 @@ def make_tree(tmp: Path) -> Path:
 	(tree / "src" / "docs").mkdir(parents=True)
 	(tree / "v8project.yaml").write_text(V8PROJECT, encoding="utf-8")
 	return tree
-
-
-def busy_lock(state_dir: Path, tree: str, other_tree: str) -> None:
-	"""Замок на связь дерева tree, удерживаемый other_tree (не просрочен)."""
-	from ib_lock import acquire_base_lock  # noqa: PLC0415
-	acquire_base_lock(other_tree, 'Srvr="host";Ref="erp";', "build", "s-other")
 
 
 def main() -> int:
@@ -59,10 +71,17 @@ def main() -> int:
 				"tool_name": tool, "tool_input": tool_input,
 				"cwd": cwd_override or cwd}, state, cwd)
 
-		# ── write исходника → блок с маршрутизацией на unica.code.patch ──
+		def run_push(source_set, full=None, call_cwd=None):
+			args = {"op": "push", "force": True, "sourceSet": source_set,
+			        "cwd": call_cwd or cwd}
+			if full is not None:
+				args["full"] = full
+			return pre("mcp__unica__run", {"args": args})
+
+		# ── write исходника → блок с маршрутизацией на unica.apply ──
 		r = pre("Write", {"file_path": bsl, "content": ""})
 		check("write .bsl в src/cf блокируется", r.returncode == 2, f"exit {r.returncode}")
-		check("причина называет unica.code.patch", "unica.code.patch" in r.stderr, r.stderr[:200])
+		check("причина называет unica.apply", "unica.apply" in r.stderr, r.stderr[:200])
 		check("блок записан в журнал", any(
 			e.get("rule") == "unica-source-gate" and e.get("decision") == "blocked"
 			for e in audit_entries(state, "unica-source-gate")), "нет записи")
@@ -120,25 +139,28 @@ def main() -> int:
 		r = run_hook("unica_source_gate.py", {}, state, cwd)
 		check("пустой stdin проходит молча", r.returncode == 0, f"exit {r.returncode}")
 
-		# ── инвариант пересборки: расширение без fullRebuild ──
-		r = pre("mcp__unica__runtime_execute",
-		        {"args": {"operation": "build", "sourceSet": "Тесты", "dryRun": False, "cwd": cwd}})
-		check("сборка расширения без fullRebuild блокируется", r.returncode == 2, f"exit {r.returncode}")
-		check("причина называет fullRebuild", "fullRebuild" in r.stderr, r.stderr[:200])
+		# ── правила пересборки: по умолчанию гейт нейтрален (0.13) ──
+		r = run_push("Тесты", full=None)
+		check("без правил: push расширения без full проходит", r.returncode == 0, f"exit {r.returncode}")
+		r = run_push("main", full=True)
+		check("без правил: push main с full проходит", r.returncode == 0, f"exit {r.returncode}")
 
-		r = pre("mcp__unica__runtime_execute",
-		        {"args": {"operation": "build", "sourceSet": "Тесты",
-		                  "fullRebuild": True, "dryRun": False, "cwd": cwd}})
-		check("сборка расширения с fullRebuild проходит", r.returncode == 0, f"exit {r.returncode}")
-
-		# ── инвариант пересборки: main с fullRebuild запрещён ──
-		r = pre("mcp__unica__runtime_execute",
-		        {"args": {"operation": "build", "sourceSet": "main",
-		                  "fullRebuild": True, "dryRun": False, "cwd": cwd}})
-		check("полная пересборка main блокируется", r.returncode == 2, f"exit {r.returncode}")
-		r = pre("mcp__unica__runtime_execute",
-		        {"args": {"operation": "build", "sourceSet": "main", "dryRun": False, "cwd": cwd}})
-		check("инкрементальная загрузка main проходит", r.returncode == 0, f"exit {r.returncode}")
+		# ── правила пересборки включены contour.json'ом проекта ──
+		zdir = tree / ".zcode" / "1c"
+		zdir.mkdir(parents=True, exist_ok=True)
+		(zdir / "contour.json").write_text(
+			json.dumps(REBUILD_RULES, ensure_ascii=False), encoding="utf-8")
+		r = run_push("Тесты", full=None)
+		check("правило: push расширения без full блокируется", r.returncode == 2, f"exit {r.returncode}")
+		check("причина — из сообщения правила", "full" in r.stderr and "расширени" in r.stderr,
+		      r.stderr[:200])
+		r = run_push("Тесты", full=True)
+		check("правило: push расширения с full проходит", r.returncode == 0, f"exit {r.returncode}")
+		r = run_push("main", full=True)
+		check("правило: push main с full блокируется", r.returncode == 2, f"exit {r.returncode}")
+		r = run_push("main", full=None)
+		check("правило: push main без full проходит", r.returncode == 0, f"exit {r.returncode}")
+		(zdir / "contour.json").unlink()
 
 		# ── чужой сервер MCP не задевается ──
 		r = pre("mcp__1c-db__execute_query", {"query": "ВЫБРАТЬ 1"})
@@ -148,49 +170,43 @@ def main() -> int:
 		wt = tmp_path / "wt"
 		wt.mkdir()
 		(wt / ".git").write_text("gitdir: /repo/.git/worktrees/wt\n", encoding="utf-8")
-		r = pre("mcp__unica__runtime_execute",
-		        {"args": {"operation": "load", "sourceSet": "main", "cwd": str(wt)}})
+		r = run_push("main", call_cwd=str(wt))
 		check("unica в неинициализированном ворктри блокируется", r.returncode == 2, f"exit {r.returncode}")
 		check("причина называет init_worktree", "init_worktree" in r.stderr, r.stderr[:200])
 		(wt / "v8project.local.yaml").write_text("infobase:\n  user: bot\n", encoding="utf-8")
 		(wt / "build" / "tools").mkdir(parents=True)
-		r = pre("mcp__unica__runtime_execute",
-		        {"args": {"operation": "load", "sourceSet": "main", "cwd": str(wt)}})
+		r = run_push("main", call_cwd=str(wt))
 		check("инициализированный ворктри проходит", r.returncode == 0, f"exit {r.returncode}")
 
 		# ── замок на инфобазу: база занята другим деревом ──
 		sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
 		import os
 		os.environ["ZCODE_1C_STATE_DIR"] = state
-		from ib_lock import acquire_base_lock, resolve_infobase_connection  # noqa: E402
+		from ib_lock import acquire_base_lock, release_base_lock, resolve_infobase_connection  # noqa: E402
 		from contour_common import session_state_dir  # noqa: E402
 		connection = resolve_infobase_connection(cwd)
 		check("связь базы прочитана из v8project.yaml", bool(connection), "пусто")
 		# предыдущие успешные вызовы сами захватывали замок — чистим перед сценарием
-		for lock_file in (session_state_dir("ib-locks")).glob("*.json"):
+		for lock_file in session_state_dir("ib-locks").glob("*.json"):
 			lock_file.unlink()
-		status, _ = acquire_base_lock(str(tmp_path / "derzhit"), connection, "build", "s-other")
+		status, _ = acquire_base_lock(str(tmp_path / "derzhit"), connection, "push", "s-other")
 		check("замок захвачен деревом-держателем", status == "ok", status)
-		r = pre("mcp__unica__runtime_execute",
-		        {"args": {"operation": "build", "sourceSet": "main", "dryRun": False, "cwd": cwd}})
+		r = run_push("main")
 		check("операция на занятой базе блокируется", r.returncode == 2, f"exit {r.returncode}")
 		check("причина описывает держателя", "База занята" in r.stderr, r.stderr[:200])
-		# держатель закончил — отпускаем его замок
-		from ib_lock import release_base_lock  # noqa: E402
 		release_base_lock(str(tmp_path / "derzhit"), connection, "s-other")
 
 		# ── PostToolUse освобождает замок своего дерева ──
-		status, _ = acquire_base_lock(cwd, connection, "build", "s1")
+		status, _ = acquire_base_lock(cwd, connection, "push", "s1")
 		check("своё дерево продлило замок", status == "ok", status)
 		r = run_hook("unica_source_gate.py", {
 			"hook_event_name": "PostToolUse", "session_id": "s1",
-			"tool_name": "mcp__unica__runtime_execute",
-			"tool_input": {"args": {"operation": "build", "sourceSet": "main", "cwd": cwd}},
+			"tool_name": "mcp__unica__run",
+			"tool_input": {"args": {"op": "push", "sourceSet": "main", "cwd": cwd}},
 			"cwd": cwd}, state, cwd)
 		check("PostToolUse прошёл", r.returncode == 0, f"exit {r.returncode}")
 		time.sleep(0.05)
-		r = pre("mcp__unica__runtime_execute",
-		        {"args": {"operation": "build", "sourceSet": "main", "dryRun": False, "cwd": cwd}})
+		r = run_push("main")
 		check("после освобождения замка операция проходит", r.returncode == 0, f"exit {r.returncode}")
 
 	return summary()

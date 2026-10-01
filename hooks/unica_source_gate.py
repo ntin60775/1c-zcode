@@ -1,32 +1,41 @@
 #!/usr/bin/env python3
 """unica_source_gate.py — гейт прямой правки исходников 1С (ZCode-порт unica-gate.ts).
 
-Полноправный порт дона (1c-omp/extensions/unica-gate.ts), в четыре ветки:
+Полноправный порт дона (1c-omp/extensions/unica-gate.ts) на поверхность
+Unica 0.13 (run/apply/docs; 0.12-имена runtime_execute/code_patch retir'нуты):
 
 1. PreToolUse Write/Edit/ApplyPatch/Bash — правка исходников
    src/{cf,cfe,epf,erf} и tests/{cfe,epf} мимо Unica MCP блокируется.
    Единственный обход — allowlist .zcode/unica-gate-escalations.txt.
-2. PreToolUse mcp__unica__* — инварианты пересборки: расширение собирается
-   только с fullRebuild:true (частичная загрузка не работает), основная
-   конфигурация — только инкрементально (полная пересборка — десятки минут);
-   невыгодная операция на занятой базе блокируется замком ib_lock;
-   unica-вызов из неинициализированного ворктри блокируется.
+2. PreToolUse mcp__unica__* — unica-вызов из неинициализированного ворктри
+   блокируется; невыгодная операция на занятой базе блокируется замком
+   ib_lock; правила пересборки (см. ниже) применяются по конфигу проекта.
 3. PostToolUse mcp__unica__* — освобождение замка после синхронной операции
-   (задача runtime.job держит замок до конца — дона отпускал его на
-   session_shutdown, в ZCode этого события нет: работает TTL + SessionStart).
+   (в ZCode нет session_shutdown: работают TTL + SessionStart-уборка).
 4. Правка самого allowlist'а эскалаций журналируется (бумажный след обхода).
+
+Инварианты пересборки — ДАННЫЕ, не код: contour.json → unica.rebuild_rules
+(дефолт пуст — нейтрален). Причины: semantics 0.13 (push {force, full},
+upload без apply) отличается от 0.12 (fullRebuild), и блокировать по
+устаревшему правилу хуже, чем не блокировать. Проект включает правила
+сверкой на живом стенде. Схема правила:
+  {"tool": "run", "op": "push", "source_sets": "extensions",
+   "require": {"full": true}, "message": "…"}     # require нарушен → блок
+  {"tool": "run", "op": "push", "source_sets": "main",
+   "forbid": {"full": true}, "message": "…"}      # forbid присутствует → блок
 
 Контракт хука ZCode: вход — JSON на stdin (hook_event_name, session_id,
 tool_name, tool_input, cwd); выход — 0 проходит, 2 блокирует с причиной
 в stderr. Неразборчивый вход пропускается молча.
 
-Состав source-set'ов EXTENSION читается из v8project.yaml проекта
-(line-парсер, без yaml-библиотек): у каждого проекта свой состав расширений,
-и хук не должен знать имена чужих объектов.
+Имена инструментов/операций — contour_common.UNICA_TOOLS_DEFAULT с override
+из contour.json (сверяются живым tools/list на стенде). Состав source-set'ов
+EXTENSION читается из v8project.yaml (line-парсер).
 
 Журнал: $ZCODE_1C_STATE_DIR/logs/rule-audit.jsonl (rule: "unica-source-gate").
 """
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -41,6 +50,7 @@ from contour_common import (
 	read_event,
 	session_id,
 	unica_server_name,
+	unica_tools,
 )
 from ib_lock import acquire_base_lock, describe_holder, release_base_lock, resolve_infobase_connection
 
@@ -51,38 +61,19 @@ ESCALATION_FILE = ".zcode/unica-gate-escalations.txt"
 SED_INPLACE_RE = re.compile(r"sed\s+(-[a-zA-Z]*i[a-zA-Z]*|--in-place)")
 REDIRECT_RE = re.compile(r">>?\s*([^\s;|&]+)")
 
-# Операции, которые меняют базу или снимают с неё снимок (замок ib_lock).
-IB_MUTATING = {"build", "load", "update", "test", "launch", "make"}
 
-# Пути вызова build-операций дона: unica.runtime.execute / runtime.job.start /
-# unica.build.load. Короткие имена инструментов юники те же.
-BUILD_TOOLS = {"runtime_execute", "runtime_job_start", "build_load"}
-
-
-# ── маршрутизация правки ─────────────────────────────────────────────────────
+# ── маршрутизация правки (подсказки в глаголах 0.13) ────────────────────────
 
 def suggest_unica_tool(rel: str) -> str:
-	"""Подсказка: какой инструмент Unica использовать для данного файла."""
+	"""Подсказка: как выразить правку файла через поверхность 0.13."""
 	lower = rel.lower()
 	if lower.endswith(".bsl"):
-		return "unica.code.patch"
-	if "/forms/" in lower and lower.endswith(".xml"):
-		return "unica.form.edit / unica.form.compile"
+		return "unica.apply (ops code.insert / code.replace)"
 	if lower.endswith("configuration.xml"):
-		return "unica.cf.edit"
-	if "/roles/" in lower:
-		return "unica.role.edit / unica.role.compile"
-	if "/datacompositionschemas/" in lower:
-		return "unica.dcs.edit / unica.dcs.compile"
-	if "/templates/" in lower:
-		return "unica.mxl.compile / unica.mxl.decompile"
-	if "/subsystems/" in lower:
-		return "unica.subsystem.edit / unica.subsystem.compile"
-	if "/commandinterfaces/" in lower:
-		return "unica.interface.edit"
-	if "/xdtopackages/" in lower:
-		return "unica.xdto.edit"
-	return "unica.meta.edit / unica.meta.add (или unica.cfe.borrow для расширений)"
+		return "unica.apply / unica.run (контракт — словарь unica.run {})"
+	if "/forms/" in lower:
+		return "unica.apply (форма; сверка — unica.view)"
+	return "unica.apply / unica.run (контракт узла — словарь unica.run {}; сверка — unica.view)"
 
 
 def block_message(rel: str, suggestion: str) -> str:
@@ -90,19 +81,13 @@ def block_message(rel: str, suggestion: str) -> str:
 		"Прямое редактирование исходников 1С заблокировано (unica-source-gate).",
 		"",
 		f"Файл: {rel}",
-		f"Используй: {suggestion}",
+		f"Как выразить: {suggestion}",
 		"",
-		"Маршрутизация:",
-		"  .bsl модуль         -> unica.code.patch",
-		"  Form.xml            -> unica.form.edit / unica.form.compile",
-		"  Configuration.xml   -> unica.cf.edit",
-		"  метаданные (XML)    -> unica.meta.edit / unica.meta.add",
-		"  Role.xml            -> unica.role.edit / unica.role.compile",
-		"  СКД Template.xml    -> unica.dcs.edit / unica.dcs.compile",
-		"  MXL Template.xml    -> unica.mxl.compile",
-		"  Subsystem.xml       -> unica.subsystem.edit",
-		"  CommandInterface    -> unica.interface.edit",
-		"  XDTO                -> unica.xdto.edit",
+		"Поверхность Unica 0.13 (глаголы, не инструменты-на-файл):",
+		"  unica.view / unica.search  — чтение/поиск (без ограничений)",
+		"  unica.apply                — правка кода и структуры (ops)",
+		"  unica.run {op: push, …}    — сборка/загрузка; unica.check — валидация",
+		"  словарь unica.run {} (вызов без op) — источник контракта",
 		"",
 		"Разовая прямая правка (когда unica.* не выражает изменение) —",
 		"впиши путь в .zcode/unica-gate-escalations.txt и повтори.",
@@ -201,38 +186,46 @@ def unica_call(tool_name: str, tool_input: dict, cwd: str):
 	if not short:
 		return None
 	args = tool_input if isinstance(tool_input, dict) else {}
-	# Аргументы юники могут лежать в args (клиент MCP заворачивает) — разворачиваем.
-	if isinstance(args.get("args"), dict):
+	if isinstance(args.get("args"), dict):  # клиент MCP может заворачивать
 		args = args["args"]
 	call_cwd = str(args.get("cwd") or cwd)
 	return short, args, call_cwd
 
 
-def extension_build_without_full_rebuild(short: str, args: dict, cwd: str):
-	"""Имя source-set'а, если это сборка расширения без fullRebuild; иначе None."""
-	if short not in BUILD_TOOLS:
-		return None
-	if args.get("operation") != "build" and short != "build_load":
-		return None
-	source_set = str(args.get("sourceSet") or "")
-	if source_set not in extension_source_sets(cwd):
-		return None
-	if args.get("fullRebuild") is True:
-		return None
-	return source_set
+def runner_op(args: dict) -> str:
+	"""Операция раннера из аргументов: 0.13 `op`, переходно `operation`."""
+	return str(args.get("op") or args.get("operation") or "")
 
 
-def main_build_with_full_rebuild(short: str, args: dict):
-	"""Имя source-set'а, если это полная пересборка main; иначе None."""
-	if short not in BUILD_TOOLS:
+def _rule_matches_source(rule: dict, source_set: str, extensions: set) -> bool:
+	selector = rule.get("source_sets")
+	if selector is None or selector == "any":
+		return True
+	if selector == "extensions":
+		return source_set in extensions
+	if selector == "main":
+		return source_set == "main"
+	if isinstance(selector, list):
+		return source_set in selector
+	return source_set == selector
+
+
+def violated_rebuild_rule(rule: dict, short: str, args: dict, call_cwd: str):
+	"""Правило нарушено → message; иначе None. Схема — см. модуль."""
+	if str(rule.get("tool") or "") != short:
 		return None
-	if args.get("operation") != "build" and short != "build_load":
+	if rule.get("op") and runner_op(args) != str(rule.get("op")):
 		return None
-	if str(args.get("sourceSet") or "") != "main":
+	extensions = extension_source_sets(call_cwd)
+	if not _rule_matches_source(rule, str(args.get("sourceSet") or ""), extensions):
 		return None
-	if args.get("fullRebuild") is not True:
-		return None
-	return "main"
+	for key, value in (rule.get("require") or {}).items():
+		if args.get(key) != value:
+			return str(rule.get("message") or f"правило пересборки: требуется {key}={value!r}")
+	for key, value in (rule.get("forbid") or {}).items():
+		if args.get(key) == value:
+			return str(rule.get("message") or f"правило пересборки: {key}={value!r} запрещено")
+	return None
 
 
 # ── входные точки ────────────────────────────────────────────────────────────
@@ -247,13 +240,14 @@ def handle_pre(event: dict) -> int:
 	tool_input = event.get("tool_input")
 	if not isinstance(tool_input, dict):
 		return 0
-	cwd = str(event.get("cwd") or __import__("os").getcwd())
+	cwd = str(event.get("cwd") or os.getcwd())
 	sid = session_id(event)
 
 	# ── ветка 2: вызовы юники ──
 	call = unica_call(tool_name, tool_input, cwd)
 	if call:
 		short, args, call_cwd = call
+		tools = unica_tools(project_root(cwd))
 
 		# ворктри: воркспейс должен быть инициализирован
 		if is_worktree(call_cwd):
@@ -273,40 +267,25 @@ def handle_pre(event: dict) -> int:
 					"  - v8project.local.yaml (креды ИБ, платформа)",
 					"  - build/tools/ (артефакты инструментов)",
 					"",
-					f"Затем проверь: unica.project.status {{\"cwd\": \"{call_cwd}\"}}",
 					"Симлинки НЕ использовать — только реальные копии.",
 				]))
 
-		# инвариант пересборки расширений
-		ext_name = extension_build_without_full_rebuild(short, args, call_cwd)
-		if ext_name:
-			audit(RULE, f"unica build {ext_name}", "сборка расширения без fullRebuild: true")
-			return block("\n".join([
-				f"Сборка расширения «{ext_name}» без fullRebuild заблокирована.",
-				"",
-				"Частичная/инкрементальная загрузка расширений НЕ работает.",
-				"Добавь \"fullRebuild\": true в аргументы вызова.",
-			]))
-
-		# запрет полной пересборки main
-		main_name = main_build_with_full_rebuild(short, args)
-		if main_name:
-			audit(RULE, f"unica build {main_name}", "полная пересборка основной конфигурации запрещена")
-			return block("\n".join([
-				"Полная пересборка основной конфигурации (main) заблокирована.",
-				"",
-				"Основная конфигурация загружается ТОЛЬКО частично (инкрементально).",
-				"Убери \"fullRebuild\": true из аргументов вызова.",
-			]))
+		# правила пересборки проекта (контур нейтрален, пока не включены)
+		for rule in tools.get("rebuild_rules") or []:
+			violation = violated_rebuild_rule(rule, short, args, call_cwd)
+			if violation:
+				audit(RULE, f"unica {runner_op(args)} {args.get('sourceSet') or ''}".strip(),
+				      violation)
+				return block(violation)
 
 		# замок на инфобазу
-		operation = str(args.get("operation") or "")
-		if operation in IB_MUTATING:
+		op = runner_op(args)
+		if op and op in (tools.get("ib_mutating_ops") or []):
 			connection = resolve_infobase_connection(call_cwd)
 			if connection:
-				status, holder = acquire_base_lock(call_cwd, connection, operation, sid)
+				status, holder = acquire_base_lock(call_cwd, connection, op, sid)
 				if status == "busy":
-					audit(RULE, f"unica {operation}",
+					audit(RULE, f"unica {op}",
 					      f"база занята деревом {holder.get('tree') if holder else '?'}")
 					return block("\n".join([
 						"База занята другим деревом (worktree-env).",
@@ -367,19 +346,19 @@ def handle_post(event: dict) -> int:
 	tool_input = event.get("tool_input")
 	if not isinstance(tool_input, dict):
 		return 0
-	cwd = str(event.get("cwd") or __import__("os").getcwd())
+	cwd = str(event.get("cwd") or os.getcwd())
 	call = unica_call(tool_name, tool_input, cwd)
 	if not call:
 		return 0
 	short, args, call_cwd = call
-	if short == "runtime_job_start":
-		return 0  # задача держит замок до конца (TTL / SessionStart выметет)
-	operation = str(args.get("operation") or "")
-	if operation not in IB_MUTATING:
-		return 0
-	connection = resolve_infobase_connection(call_cwd)
-	if connection:
-		release_base_lock(call_cwd, connection, session_id(event))
+	if short.startswith("task."):
+		return 0  # durable-задача держит замок до конца (TTL / SessionStart)
+	tools = unica_tools(project_root(cwd))
+	op = runner_op(args)
+	if op and op in (tools.get("ib_mutating_ops") or []):
+		connection = resolve_infobase_connection(call_cwd)
+		if connection:
+			release_base_lock(call_cwd, connection, session_id(event))
 	return 0
 
 

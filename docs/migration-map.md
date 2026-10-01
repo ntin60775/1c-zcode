@@ -24,6 +24,27 @@
 | поставка | каталог + deploy-runner | `deploy.json` (контракт v1 sot-zcode-marketplace), вендоринг в `<repo>/.zcode/`; self-`marketplace.json` удалён |
 | миграция со старого контура | скрипт + команда | `scripts/migrate_from_omp.py`, `/1c-migrate-from-omp`, `docs/MIGRATION-FROM-OMP.md` |
 
+## Переход на поверхность Unica 0.13 (v0.2.1)
+
+Разведка по докам/спекам 0.13.0-rc.3 (v8-runner 0.5.1 → 0.11.2, смена репо
+раннера) показала: MCP-поверхность сжата до глаголов
+`run/view/check/apply/search/docs/diff/resolve/task.*`; каталог
+сценариев-блоков — https://ingvarconsulting.github.io/unica/scenarios.html .
+Правила 0.12 устарели, контур пересобран:
+
+| Было (0.12-донор) | Стало (0.13) |
+|---|---|
+| гейт матчит `runtime_execute`/`code_patch`/… | имена/операции — данные: `contour_common.UNICA_TOOLS_DEFAULT` + override `contour.json → unica.*`; дефолты 0.13 (`run`/`apply`/`docs`) |
+| инвариант пересборки зашит в код (fullRebuild) | правила-данные `unica.rebuild_rules` в contour.json; **дефолт пуст** — semantics `push {force, full}` отличается, включается проектом после сверки на стенде |
+| doc_gate: сверка `documentation_search`/`standards_*` | сверка `unica.docs`/`search`; мутации — `apply` и `run {op: push/upload/apply/reset}`; структурность мутации — по ops (`code.*` — серия кода, флаг не сбрасывает) |
+| парсинг `infobase.connection` | обе формы: `infobase.connection` (0.12) и `infobases.origin.connection` (0.13) |
+| `builder: DESIGNER/IBCMD` | в скиллах: ключ отвергается схемой 0.13, per-operation `providers`; практика проектов: файловая — ibcmd, серверная — дизайнер |
+| публикации для тестов | в скиллах: веб-публикация вне поверхности 0.13; тест-контуру не нужна (testpilot поднимает клиент сам, toolkit живёт в сессии) |
+
+Маршрутизация в скиллах переписана с «файл → инструмент» на модель
+сценариев-блоков: чтение — `search/view/diff/resolve/docs`, правка —
+`apply` план→запись (канон S159: search → view → план → запись → check/diff).
+
 ## Не начато / сознательно не переносится
 
 1. **`unica-project-setup`** (authoring `v8project.yaml`): у юники 0.13 свои

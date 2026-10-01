@@ -6,7 +6,8 @@
 		"url": "http://127.0.0.1:6003/mcp"
 	},
 	"unica": {
-		"server": "unica"
+		"server": "unica",
+		"rebuild_rules": []
 	},
 	"mcp_gate": {
 		"dangerous": {
@@ -24,6 +25,6 @@
 		}
 	},
 	"style": {
-		"pack": ".zcode/style"
+		"pack": ".zcode/skills/1c-bsl-code-style"
 	}
 }

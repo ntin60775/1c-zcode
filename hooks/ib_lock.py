@@ -27,22 +27,27 @@ LOCK_FIELDS = ("connection", "tree", "session_id", "operation", "started_at", "e
 
 
 def _connection_from_file(path: Path):
-	"""`infobase.connection` из yaml-файла (line-парсер, без yaml-библиотек)."""
+	"""`infobase.connection` (0.12) или `infobases.origin.connection` (0.13)."""
 	if not path.is_file():
 		return None
 	try:
 		lines = path.read_text(encoding="utf-8").splitlines()
 	except OSError:
 		return None
-	in_infobase = False
+	top = None
+	in_origin = False
 	for line in lines:
 		if line[:1] not in (" ", "\t"):
-			in_infobase = line.startswith("infobase:")
-			continue
-		if not in_infobase:
+			top = line.split(":", 1)[0].strip()
+			in_origin = False
 			continue
 		stripped = line.strip()
-		if stripped.startswith("connection:"):
+		if top == "infobases" and stripped.rstrip(":").strip() == "origin":
+			in_origin = True
+			continue
+		if not stripped.startswith("connection:"):
+			continue
+		if top == "infobase" or (top == "infobases" and in_origin):
 			value = stripped[len("connection:"):].strip().strip("'\"")
 			if value:
 				return value

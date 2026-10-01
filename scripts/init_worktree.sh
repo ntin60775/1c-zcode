@@ -76,7 +76,8 @@ echo ""
 
 ERRORS=0
 
-# ── строка подключения к базе: локальный оверлей перекрывает основной файл ──
+# ── строка подключения к базе: локальный оверлей перекрывает основной файл.
+# Формы: 0.12 `infobase.connection` и 0.13 `infobases.origin.connection`.
 resolve_connection() {
 	python3 - "$1" <<'PY'
 import re, sys, pathlib
@@ -85,15 +86,18 @@ def read(name):
     f = tree / name
     if not f.exists():
         return None
-    in_infobase = False
+    top, in_origin = None, False
     for line in f.read_text(encoding="utf-8").splitlines():
         if re.match(r"^\S", line):
-            in_infobase = bool(re.match(r"^infobase\s*:", line))
+            top = line.split(":", 1)[0].strip()
+            in_origin = False
             continue
-        if not in_infobase:
+        stripped = line.strip()
+        if top == "infobases" and stripped.rstrip(":").strip() == "origin":
+            in_origin = True
             continue
-        m = re.match(r"^\s+connection\s*:\s*(.+?)\s*$", line)
-        if m:
+        m = re.match(r"^connection\s*:\s*(.+?)\s*$", stripped)
+        if m and (top == "infobase" or (top == "infobases" and in_origin)):
             return m.group(1).strip().strip("'\"")
     return None
 print(read("v8project.local.yaml") or read("v8project.yaml") or "")

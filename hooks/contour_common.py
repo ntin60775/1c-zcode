@@ -132,7 +132,7 @@ def contour_config(root: str) -> dict:
 # ── имена MCP-инструментов ───────────────────────────────────────────────────
 
 def mcp_short_name(tool_name: str, server: str) -> str:
-	"""Короткое имя инструмента MCP ('code_patch') либо ''.
+	"""Короткое имя инструмента MCP ('run') либо ''.
 
     Полное имя в ZCode: mcp__<server>__<tool>. Сервер юники объявлен в её
     собственном .mcp.json как 'unica' независимо от канала установки.
@@ -141,6 +141,47 @@ def mcp_short_name(tool_name: str, server: str) -> str:
 	return tool_name[len(prefix):] if tool_name.startswith(prefix) else ""
 
 
+# Поверхность юники 0.13: run/view/check/apply/search/docs/diff/resolve/task.*
+# (0.12-имена runtime_execute/code_patch/documentation_search retir'нуты).
+# Контракт объявлен словарём unica.run {} — имена здесь карта по умолчанию,
+# сверяется живым tools/list на стенде и переопределяется contour.json.
+UNICA_TOOLS_DEFAULT = {
+	"server": "unica",
+	# сверочные (засчитываются как «сверился с документацией/источником»)
+	"docs": ["docs", "search"],
+	# мутирующие исходники (требуют предварительной сверки)
+	"mutations": ["apply", "run"],
+	# инструменты, в аргументах которых живёт операция раннера (op)
+	"op_tools": ["run"],
+	# операции раннера, меняющие базу (захват замка инфобазы)
+	"ib_mutating_ops": [
+		"push", "upload", "apply", "reset",
+		"infobase.dump", "infobase.restore", "launch",
+	],
+	# правила инвариантов пересборки; по умолчанию ПУСТО — semantics push/full
+	# в 0.13 отличается от fullRebuild 0.12, до сверки на стенде гейт нейтрален.
+	# Пример правила (включается в contour.json проекта):
+	#   {"tool": "run", "op": "push", "source_set": "extensions",
+	#    "require": {"args.full": true},
+	#    "message": "частичная загрузка расширений в этом проекте запрещена"}
+	"rebuild_rules": [],
+}
+
+
+def unica_tools(root: str) -> dict:
+	"""Конфиг поверхности юники: дефолты 0.13 + override из contour.json."""
+	config = contour_config(root).get("unica", {})
+	if not isinstance(config, dict):
+		return dict(UNICA_TOOLS_DEFAULT)
+	merged = dict(UNICA_TOOLS_DEFAULT)
+	for key, value in config.items():
+		if key in merged and isinstance(merged[key], list) and isinstance(value, list):
+			merged[key] = value
+		elif key in merged:
+			merged[key] = value
+	return merged
+
+
 def unica_server_name(root: str) -> str:
 	"""Имя MCP-сервера юники (переопределяется contour.json: unica.server)."""
-	return str(contour_config(root).get("unica", {}).get("server") or "unica")
+	return str(unica_tools(root).get("server") or "unica")
