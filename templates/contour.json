@@ -2,6 +2,11 @@
 	"testpilot": {
 		"profile": "main"
 	},
+	"1c": {
+		"publish": {
+			"port": 8414
+		}
+	},
 	"1c_db": {
 		"url": "http://127.0.0.1:6003/mcp"
 	},

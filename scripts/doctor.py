@@ -3,7 +3,7 @@
 
 Проверяет (без 1С и сети, кроме явных http-проб):
   1. Unica установлена и ровно один канал; версия >= UNICA_MIN.
-  2. 1c-testpilot в PATH + окружение e2e-прогонов (pytest в venv).
+  2. 1c-testpilot в PATH + окружение e2e-прогонов (pytest в venv); API-публикация (ibsrv) резолвится.
   3. Проектные файлы контура: v8project.yaml, .zcode/config.json (разводка
      через wire_config --check), .zcode/1c/contour.json, profiles.yaml.
   4. Стайл-чекер резолвится (env → PATH → вендоренный пак).
@@ -21,6 +21,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 # contour hooks доступны в обеих раскладках: репо (scripts/../hooks) и
@@ -152,6 +153,33 @@ def main() -> int:
 	else:
 		warn("окружение testpilot (venv/pipx) не найдено — e2e-прогоны недоступны; "
 		     "scripts/install_testpilot.sh")
+
+	# ── 2b. API-публикация (ibsrv; опциональный контур) ──
+	publish = {}
+	try:
+		publish = json.loads(
+			(root / ".zcode" / "1c" / "contour.json").read_text(encoding="utf-8")
+		).get("1c", {}).get("publish", {})
+	except Exception:
+		pass
+	pub_port = str(publish.get("port", "8414"))
+	ibsrv = os.environ.get("PUBLISH_IBSRV") or str(publish.get("ibsrv") or "")
+	if not ibsrv:
+		import glob as _glob
+		hits = sorted(_glob.glob("/opt/1cv8/x86_64/*/ibsrv"))
+		ibsrv = hits[-1] if hits else ""
+	if ibsrv:
+		ok(f"ibsrv для API-публикации резолвится: {ibsrv}")
+	else:
+		warn("ibsrv (автономный сервер) на хосте не найден — publish_ib.sh будет "
+		     "искать его в distrobox-контейнерах; надёжнее PUBLISH_IBSRV или "
+		     "1c.publish.ibsrv в contour.json")
+	try:
+		with urllib.request.urlopen(f"http://127.0.0.1:{pub_port}/", timeout=5) as r:
+			if r.status == 200:
+				ok(f"API-публикация жива на :{pub_port}")
+	except Exception:
+		pass  # не поднята — норм: поднимается перед API-прогоном
 
 	# ── 3. Проектные файлы ──
 	if (root / "v8project.yaml").is_file():
