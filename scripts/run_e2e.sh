@@ -32,33 +32,46 @@ fi
 
 PROFILES="$ROOT/.zcode/testpilot/profiles.yaml"
 [ -f "$PROFILES" ] || { echo "✗ нет $PROFILES — прогони bootstrap контура" >&2; exit 2; }
-[ -d "$ROOT/$TESTS" ] || {
+[ -d "$ROOT/$TESTS" ] || [ -f "$ROOT/$TESTS" ] || {
 	echo "✗ нет e2e-тестов: $TESTS" >&2
 	echo "  напиши их workflow 1c-e2e-author или по скиллу 1c-test-contour" >&2
 	exit 2
 }
 
 # ── пароль: password_env профиля, пусто в окружении → добрать из local-оверлея.
-# Значения не печатаются — сюда только экспорт. ──
+# Значения не печатаются — сюда только экспорт. Поддерживаются обе раскладки
+# profiles.yaml (с корневым profiles: и плоская) и оба места пароля в
+# v8project.local.yaml (плоский password: и вложенный infobases.origin.password).
 eval "$("$PY" - "$PROFILES" "$PROFILE" "$ROOT" <<'PY'
 import os, re, sys, pathlib
 profiles_path, profile, root = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3])
-block = []
-grab = False
-for line in pathlib.Path(profiles_path).read_text(encoding="utf-8").splitlines():
-    if re.match(r"^  \S", line):
-        grab = line.split(":", 1)[0].strip() == profile
-        continue
-    if grab and line.startswith("    "):
-        block.append(line)
+lines = pathlib.Path(profiles_path).read_text(encoding="utf-8").splitlines()
+# блок профиля: заголовок на отступе 2-6, потомки глубже
+head = re.compile(rf"^\s{{2,6}}{re.escape(profile)}:\s*$")
+block, start = [], None
+for i, line in enumerate(lines):
+    if head.match(line):
+        indent = len(line) - len(line.lstrip())
+        block = [line]
+        for j in range(i + 1, len(lines)):
+            ln = lines[j]
+            if not ln.strip():
+                block.append(ln); continue
+            if len(ln) - len(ln.lstrip()) > indent:
+                block.append(ln)
+            else:
+                break
+        break
 text = "\n".join(block)
 env_name = re.search(r"password_env:\s*['\"]?([\w]+)", text)
 if env_name and not os.environ.get(env_name.group(1)):
-    local = root / "v8project.local.yaml"
     pwd = ""
+    local = root / "v8project.local.yaml"
     if local.is_file():
-        m = re.search(r"(?m)^password:\s*['\"]?(.+?)\s*['\"]?\s*$",
-                      local.read_text(encoding="utf-8"))
+        ltext = local.read_text(encoding="utf-8")
+        m = re.search(r"(?m)^password:\s*['\"]?(.+?)\s*['\"]?\s*$", ltext)
+        if not m:  # вложенный infobases.origin.password
+            m = re.search(r"(?ms)^infobases:.*?password:\s*['\"]?(.+?)\s*['\"]?\s*$", ltext)
         pwd = m.group(1) if m else ""
     if pwd:
         safe = pwd.replace("'", "'\\''")

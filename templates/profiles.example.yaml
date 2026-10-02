@@ -1,15 +1,20 @@
 # Профили тестовых баз 1c-testpilot (контуры 1c-zcode).
 # Копия лежит в .zcode/testpilot/profiles.yaml (в git БЕЗ паролей:
 # пароль передаётся именем env-переменной в password_env).
-# Формат — profiles.yaml 1c-testpilot; перечитывается на каждом обращении,
-# так что правка не требует перезапуска сервера.
+# Формат — profiles.yaml 1c-testpilot 1.8: профили ОБЯЗАНЫ жить под
+# корневым ключом profiles: (плоский корень = ActionError при запуске).
+# Перечитывается на каждом обращении — правка не требует перезапуска.
+# Относительный base резолвится от каталога ЭТОГО файла.
+# wait: 240 — первый старт тест-клиента под Xvfb (software-GL) занимает
+# минуты; 60 не хватает (deadline expired).
 
-main:
-  base: build/ib            # каталог файловой базы или имя базы кластера
-  # server: true            # серверная база: base: MyBase, server: true
-  user: Тестировщик
-  password_env: TC1C_MAIN_PASSWORD   # пароль берётся из окружения
-  # exe: /opt/1cv8/x86_64/8.3.27/1cv8
-  # version: 8.3.27
-  desktop: isolated         # изолированный рабочий стол (Xvfb на Linux)
-  wait: 60
+profiles:
+  main:
+    base: ../../../build/ib    # от каталога этого файла; файловая база
+    # server: true             # серверная база: base: MyBase, server: true
+    user: Тестировщик
+    password_env: TC1C_MAIN_PASSWORD   # пароль берётся из окружения
+    # exe: /opt/1cv8/x86_64/8.3.27/1cv8
+    # version: 8.3.27
+    desktop: isolated          # изолированный рабочий стол (Xvfb на Linux)
+    wait: 240

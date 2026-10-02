@@ -153,13 +153,43 @@ if [[ $MODE == stop ]]; then
 fi
 
 # ── уже полностью поднят? (клиент опрашивает прокси) ──
-# Живой клиент держит long-poll открытым (curl уходит в таймаут) или отдаёт
-# задание; мгновенный 204 = клиентов нет. Проверка «curl что-то вернул» дала
-# ложное «уже работает» на пустом прокси.
+# Честная проба: безобидный execute_code через MCP. /1c/poll не годится:
+# при POLL_TIMEOUT=0 прокси отвечает мгновенным 204 и с клиентом, и без.
 client_alive() {
-	local code
-	code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 4 "${URL%/mcp}/1c/poll" 2>/dev/null)"
-	[[ -n "$code" && "$code" != "204" ]]
+	python3 - "$URL" <<'PY' 2>/dev/null
+import json, sys, urllib.request
+url = sys.argv[1]
+def rpc(payload, sid=None, timeout=25):
+    h = {"Content-Type": "application/json",
+         "Accept": "application/json, text/event-stream"}
+    if sid:
+        h["Mcp-Session-Id"] = sid
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers=h)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        raw = r.read().decode()
+        new_sid = r.headers.get("Mcp-Session-Id")
+        ctype = r.headers.get("Content-Type", "")
+    if "text/event-stream" in ctype:
+        raw = next((ln[5:].strip() for ln in raw.splitlines()
+                    if ln.startswith("data:") and ln[5:].strip()), "{}")
+    return new_sid, (json.loads(raw) if raw.strip() else {})
+try:
+    sid, _ = rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                  "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                             "clientInfo": {"name": "alive-probe", "version": "0"}}})
+    if sid:
+        rpc({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+    _, res = rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                  "params": {"name": "execute_code",
+                             "arguments": {"code": "Результат = 6 * 7;"}}}, sid)
+    data = res.get("result", {}).get("structuredContent") or {}
+    inner = data.get("result", data)
+    ok = inner.get("success") is True and str(inner.get("data")) .strip('"') == "42"
+    sys.exit(0 if ok else 1)
+except Exception:
+    sys.exit(1)
+PY
 }
 if curl -so /dev/null --max-time 3 "$URL"; then
 	if client_alive; then
