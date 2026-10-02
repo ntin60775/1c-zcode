@@ -15,9 +15,13 @@ from _lib import audit_entries, check, run_hook, summary  # noqa: E402
 
 FAKE_CHECKER = """\
 import sys
-bad = any("ПЛОХО" in open(p, encoding="utf-8").read() for p in sys.argv[1:])
-print("tab-rhythm: отступы" if bad else "bsl_style_check_ok")
-sys.exit(1 if bad else 0)
+found = False
+for p in sys.argv[1:]:
+    for number, line in enumerate(open(p, encoding="utf-8").read().splitlines(), 1):
+        if "ПЛОХО" in line:
+            print(f"{p}:{number}: [tab-rhythm] отступы")
+            found = True
+sys.exit(1 if found else 0)
 """
 
 
@@ -50,12 +54,38 @@ def main() -> int:
 		bsl = "src/cf/M/Модуль.bsl"
 		(tree / bsl).write_text("Если ПЛОХО Тогда\nКонецЕсли;\n", encoding="utf-8")
 
-		# ── нарушение: advisory-отчёт в stderr, код 0 ──
+		# ── Write целиком: нарушение блокирует (exit 2) ──
 		r = post("Write", {"file_path": bsl, "content": "…"})
-		check("нарушение даёт advisory (exit 0)", r.returncode == 0, f"exit {r.returncode}")
-		check("отчёт чекера в stderr", "tab-rhythm" in r.stderr, r.stderr[:200])
-		check("нарушение в журнале", any(e.get("rule") == "bsl-style-gate"
+		check("Write: нарушение в файле блокирует (exit 2)", r.returncode == 2,
+		      f"exit {r.returncode}")
+		check("Write: отчёт в stderr", "tab-rhythm" in r.stderr, r.stderr[:200])
+		check("нарушение в журнале (blocked)", any(
+			e.get("rule") == "bsl-style-gate"
 			for e in audit_entries(state, "bsl-style-gate")), "нет записи")
+
+		# ── Edit: старое нарушение вне new_string — фон, не блокирует ──
+		# PostToolUse выполняется ПОСЛЕ правки: на диске — уже новое состояние
+		(tree / bsl).write_text("Если ПЛОХО Тогда\nКонецЕсли; // хвост\n", encoding="utf-8")
+		r = post("Edit", {"file_path": bsl, "old_string": "КонецЕсли;",
+		                  "new_string": "КонецЕсли; // хвост"})
+		check("Edit: старое нарушение вне правки не блокирует", r.returncode == 0,
+		      f"exit {r.returncode} / {r.stderr[:120]}")
+
+		# ── Edit: нарушение в new_string — блок ──
+		(tree / bsl).write_text("Если Хорошо Тогда\nЕсли ПЛОХО Тогда\nКонецЕсли;\n",
+		                        encoding="utf-8")
+		r = post("Edit", {"file_path": bsl, "old_string": "хвост",
+		                  "new_string": "Если ПЛОХО Тогда"})
+		check("Edit: нарушение в new_string блокирует", r.returncode == 2,
+		      f"exit {r.returncode} / {r.stderr[:120]}")
+
+		# ── ApplyPatch: hunk-диапазон по заголовку ──
+		(tree / bsl).write_text("Если ПЛОХО Тогда\nКонецЕсли;\n", encoding="utf-8")
+		r = post("ApplyPatch", {"patch":
+			f"*** Begin Patch\n*** Update File: {bsl}\n@@ -1,2 +1,2 @@\n-Если Хорошо Тогда\n"
+			"+Если ПЛОХО Тогда\n+КонецЕсли;\n*** End Patch\n"})
+		check("ApplyPatch: hunk-диапазон с нарушением блокирует", r.returncode == 2,
+		      f"exit {r.returncode} / {r.stderr[:120]}")
 
 		# ── чистый файл: тихо ──
 		(tree / bsl).write_text("Если Хорошо Тогда\nКонецЕсли;\n", encoding="utf-8")
