@@ -143,12 +143,12 @@ def main() -> int:
 		pipx = Path.home() / ".local" / "pipx" / "venvs" / "1c-testpilot" / "bin" / "python"
 		tp_env = str(pipx) if pipx.is_file() else ""
 	if tp_env:
-		probe = subprocess.run([tp_env, "-c", "import pytest, testpilot"],
+		probe = subprocess.run([tp_env, "-c", "import pytest, testpilot, onec_db"],
 			capture_output=True, text=True)
 		if probe.returncode == 0:
-			ok(f"e2e-окружение testpilot готово (pytest): {tp_env}")
+			ok(f"e2e-окружение testpilot готово (pytest + onec_db): {tp_env}")
 		else:
-			warn(f"в {tp_env} нет pytest — e2e-прогоны недоступны; "
+			warn(f"в {tp_env} нет pytest/onec_db — e2e-прогоны недоступны; "
 			     "scripts/install_testpilot.sh переставит окружение")
 	else:
 		warn("окружение testpilot (venv/pipx) не найдено — e2e-прогоны недоступны; "

@@ -7,6 +7,7 @@
 set -euo pipefail
 
 PIN="${TESTPILOT_PIN:-1c-testpilot[allure]>=1.8,<2}"
+ONEDB_PIN="${ONEC_DB_PIN:-1c-onec-db @ git+https://github.com/ntin60775/1c-onec-db.git@v0.1.3}"
 VENV="$HOME/.local/venvs/1c-testpilot"
 BIN="$HOME/.local/bin"
 
@@ -18,10 +19,12 @@ fi
 echo "→ ставлю $PIN"
 "$VENV/bin/python" -m pip install -q --upgrade pip
 "$VENV/bin/python" -m pip install -q "$PIN"
+echo "→ ставлю $ONEDB_PIN"
+"$VENV/bin/python" -m pip install -q "$ONEDB_PIN"
 
 "$VENV/bin/python" - <<'PY'
-import pytest, testpilot
-print("✓ testpilot ok, pytest", pytest.__version__)
+import pytest, testpilot, onec_db
+print("✓ testpilot ok, pytest", pytest.__version__, "| onec_db ok")
 PY
 
 mkdir -p "$BIN"
