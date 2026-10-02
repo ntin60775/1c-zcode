@@ -116,8 +116,13 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 			echo "✗ нет клона тулкита: $TOOLKIT (ONEC_MCP_TOOLKIT_DIR)" >&2
 			exit 2
 		fi
-		( cd "$TOOLKIT" && setsid env PORT="$PORT" "$VENV/bin/python" \
-			-m onec_mcp_toolkit_proxy >"$PROXY_LOG" 2>&1 & echo $! > "$PROXY_PIDFILE" )
+		# Тестовый контур: логика-тесты пишут/удаляют данные фикстур, поэтому
+		# «Записать»/«Удалить» НЕ блокируются; системные опасности (COM, файлы,
+		# монопольный/привилегированный режимы) остаются заблокированы.
+		# Прод защищён независимо: mcp_gate блокирует execute_code в прод-контуре.
+		DANGER_KEEP="УдалитьФайлы,DeleteFiles,КопироватьФайл,CopyFile,ПереместитьФайл,MoveFile,СоздатьКаталог,CreateDirectory,COMОбъект,COMObject,УстановитьПривилегированныйРежим,SetPrivilegedMode,ПодключитьВнешнююКомпоненту,AttachAddIn,УстановитьВнешнююКомпоненту,InstallAddIn,УстановитьМонопольныйРежим,SetExclusiveMode"
+		( cd "$TOOLKIT" && setsid env PORT="$PORT" DANGEROUS_KEYWORDS="$DANGER_KEEP" \
+			"$VENV/bin/python" -m onec_mcp_toolkit_proxy >"$PROXY_LOG" 2>&1 & echo $! > "$PROXY_PIDFILE" )
 		echo "• прокси поднят (pid $(cat "$PROXY_PIDFILE")); лог: $PROXY_LOG"
 		for _ in $(seq 1 20); do
 			alive && break

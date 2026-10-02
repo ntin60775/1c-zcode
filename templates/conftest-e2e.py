@@ -16,8 +16,10 @@ import json
 import os
 import pathlib
 import re
+import threading
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -109,14 +111,89 @@ class OnecDB:
 		payload = data.get("data") if isinstance(data, dict) else data
 		if payload is None:
 			raise RuntimeError("execute_code: код не установил переменную `Результат`")
+		# сериализатор тулкита отдаёт 1С-строку как JSON-литерал: '"e74e-…"'
+		if isinstance(payload, str) and payload[:1] == '"':
+			try:
+				payload = json.loads(payload)
+			except json.JSONDecodeError:
+				pass
 		return payload
+
+	def execute_json(self, code: str):
+		"""BSL обязан установить `Результат` JSON-строкой; вернуть python-объект."""
+		return json.loads(self.execute(code))
 
 	def query(self, text: str, limit: int = 100):
 		"""Выполнить запрос; вернуть строки результата."""
 		data = self._call("execute_query", {"query": text, "limit": limit})
 		if isinstance(data, dict) and isinstance(data.get("result"), dict):
-			return data["result"]
+			data = data["result"]
+		if isinstance(data, dict) and isinstance(data.get("data"), str):
+			try:
+				data = {**data, "data": json.loads(data["data"])}
+			except json.JSONDecodeError:
+				pass
 		return data
+
+	# ── тестовые данные (замена юнит-фикстур) ──
+
+	@staticmethod
+	def _bsl_str(value) -> str:
+		# строковый литерал 1С: двойные кавычки, экранирование удвоением
+		return '"' + str(value).replace('"', '""') + '"'
+
+	def create_object(self, type_name: str, attrs: dict,
+	                  post: bool = False, marker: str = "Е2Е-"):
+		"""Создать справочник/документ с плоскими реквизитами; вернуть GUID ссылки.
+
+		attrs: {ИмяРеквизита: значение(строка/число/bool)}; Наименование/Номер
+		без маркера получают префикс `marker` (очистка по нему).
+		post=True — провести документ. Только менеджерный путь
+		(Справочники.X.СоздатьЭлемент()): Новый(Тип("СправочникОбъект.X"))
+		в окружении Выполнить тулкита ломает установку реквизитов.
+		"""
+		name = attrs.get("Наименование") or attrs.get("Номер") or ""
+		body = dict(attrs)
+		if name and not str(name).startswith(marker):
+			key = "Наименование" if "Наименование" in body else "Номер"
+			body[key] = marker + str(body[key])
+		if not re.fullmatch(r"[А-Яа-яЁё\w]+", type_name):
+			raise ValueError(f"type_name должен быть идентификатором 1С: {type_name!r}")
+		klass = "документ" if post or "Номер" in body else "справочник"
+		manager = {"документ": "Документы", "справочник": "Справочники"}[klass]
+		create = "СоздатьДокумент()" if klass == "документ" else "СоздатьЭлемент()"
+		lines = [f"Е2ЕОб = {manager}.{type_name}.{create};"]
+		for key, value in body.items():
+			if isinstance(value, bool):
+				expr = "Истина" if value else "Ложь"
+			elif isinstance(value, (int, float)):
+				expr = str(value)
+			else:
+				expr = self._bsl_str(value)
+			lines.append(f"Е2ЕОб.{key} = {expr};")
+		if klass == "документ":
+			lines.append("Е2ЕОб.Записать(" + ("РежимЗаписиДокумента.Проведение);" if post else "РежимЗаписиДокумента.Запись);"))
+		else:
+			lines.append("Е2ЕОб.Записать();")
+		lines.append("Результат = Е2ЕОб.Ссылка.УникальныйИдентификатор();")
+		guid = self.execute("\n".join(lines))
+		return {"type": type_name, "guid": str(guid), "klass": klass}
+
+	def delete_object(self, type_name: str, guid: str, klass: str = "справочник"):
+		if not re.fullmatch(r"[А-Яа-яЁё\w]+", type_name):
+			raise ValueError(f"type_name должен быть идентификатором 1С: {type_name!r}")
+		manager = {"документ": "Документы", "справочник": "Справочники"}[klass]
+		self.execute(
+			f"Е2ЕСсылка = {manager}.{type_name}.ПолучитьСсылку("
+			f"Новый УникальныйИдентификатор({self._bsl_str(guid)}));\n"
+			"Е2ЕОб = Е2ЕСсылка.ПолучитьОбъект();\n"
+			"Если Е2ЕОб <> Неопределено Тогда Е2ЕОб.Удалить(); КонецЕсли;\n"
+			"Результат = Истина;")
+
+	def set_constant(self, name: str, value: str):
+		"""Записать константу (канон мока интеграции: URL внешнего сервиса — из константы)."""
+		self.execute(f"Константы.{name}.Установить({self._bsl_str(value)});\n"
+		             "Результат = Истина;")
 
 
 def _resolve_url() -> str:
@@ -146,3 +223,60 @@ def onec_db():
 			"bash .zcode/1c/scripts/start_1c_db.sh (прод-гейт execute_code блокирует)"
 		) from e
 	return client
+
+
+class StubServer:
+	"""Локальная HTTP-заглушка внешней системы (мок интеграции).
+
+	routes: {(method, path): (status, body_str)}. Запросы пишутся в .calls —
+	тест может проверить, что конфигурация обратилась и с теми ли параметрами.
+	Использование: ss.route(...); httpd = ThreadingHTTPServer(("127.0.0.1", 0),
+	ss.handler_class()); ss._port = httpd.server_address[1] — или фикстура
+	stub_server, которая делает это сама.
+	"""
+
+	def __init__(self):
+		self.calls = []
+		self.routes = {}
+		self._port = 0
+
+	def route(self, method: str, path: str, status: int = 200, body: str = "{}"):
+		self.routes[(method.upper(), path)] = (status, body)
+		return self
+
+	@property
+	def url(self) -> str:
+		return f"http://127.0.0.1:{self._port}"
+
+	def handler_class(self):
+		server = self
+
+		class Handler(BaseHTTPRequestHandler):
+			def _route(self):
+				key = (self.command, self.path.split("?", 1)[0])
+				server.calls.append({"method": self.command, "path": self.path})
+				status, body = server.routes.get(
+					key, (404, '{"error": "stub: нет маршрута"}'))
+				payload = body.encode("utf-8")
+				self.send_response(status)
+				self.send_header("Content-Type", "application/json; charset=utf-8")
+				self.send_header("Content-Length", str(len(payload)))
+				self.end_headers()
+				self.wfile.write(payload)
+
+			do_GET = do_POST = do_PUT = _route
+			log_message = lambda *a, **k: None  # noqa: E731
+
+		return Handler
+
+
+@pytest.fixture()
+def stub_server():
+	server = StubServer()
+	httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.handler_class())
+	server._port = httpd.server_address[1]
+	thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+	thread.start()
+	yield server
+	httpd.shutdown()
+	httpd.server_close()
