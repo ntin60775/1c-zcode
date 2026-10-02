@@ -118,8 +118,10 @@ if junit.is_file():
         def num(attr):
             try: return int(float(suite.get(attr, "0")))
             except ValueError: return 0
-        summary.update(collected=num("tests"), passed=num("passed") - num("errors"),
-                       failed=num("failures"), errors=num("errors"),
+        summary.update(collected=num("tests"),
+                       passed=num("tests") - num("failures") - num("errors") - num("skipped"),
+                       failed=num("failures"),
+                       errors=num("errors"),
                        skipped=num("skipped"), junit=True)
 summary["passed"] = max(summary["passed"], 0)
 print("E2E_SUMMARY_JSON " + json.dumps(summary, ensure_ascii=False))
