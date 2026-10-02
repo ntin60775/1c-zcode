@@ -28,18 +28,20 @@
 # известное ограничение /IBConnectionString).
 set -euo pipefail
 
-ROOT="${1:-.}"
-ROOT="$(cd "$ROOT" && pwd)"
 MODE="start"
 HEADLESS=0
+ROOT=""
 for arg in "$@"; do
 	case "$arg" in
 	--headless) HEADLESS=1 ;;
 	--stop) MODE="stop" ;;
 	--proxy-only) MODE="proxy_only" ;;
 	--stop-proxy) MODE="stop_proxy" ;;
+	*) [ -z "$ROOT" ] && ROOT="$arg" ;;
 	esac
 done
+[ -n "$ROOT" ] || ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+ROOT="$(cd "$ROOT" && pwd)"
 
 HASH="$(printf '%s' "$ROOT" | sha1sum | cut -c1-8)"
 PIDFILE="/tmp/1c-db-$HASH.pid"
@@ -52,7 +54,8 @@ TOOLKIT="${ONEC_MCP_TOOLKIT_DIR:-$HOME/home/dev/contrib/clones/1c-mcp-toolkit}"
 # ── hooks контура: репо (scripts/../hooks) или вендор (scripts/../../hooks) ──
 HOOKS_DIR=""
 for rel in "../../hooks" "../hooks"; do
-	cand="$(cd "$(dirname "${BASH_SOURCE[0]}")/$rel" 2>/dev/null && pwd)"
+	# не-фатально: несуществующий кандидат не должен убить скрипт при set -e
+	cand="$(cd "$(dirname "${BASH_SOURCE[0]}")/$rel" 2>/dev/null && pwd || true)"
 	[[ -f "$cand/ib_lock.py" ]] && { HOOKS_DIR="$cand"; break; }
 done
 
@@ -145,8 +148,16 @@ if [[ $MODE == stop ]]; then
 fi
 
 # ── уже полностью поднят? (клиент опрашивает прокси) ──
+# Живой клиент держит long-poll открытым (curl уходит в таймаут) или отдаёт
+# задание; мгновенный 204 = клиентов нет. Проверка «curl что-то вернул» дала
+# ложное «уже работает» на пустом прокси.
+client_alive() {
+	local code
+	code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 4 "${URL%/mcp}/1c/poll" 2>/dev/null)"
+	[[ -n "$code" && "$code" != "204" ]]
+}
 if curl -so /dev/null --max-time 3 "$URL"; then
-	if curl -so /dev/null --max-time 4 "${URL%/mcp}/1c/poll" 2>/dev/null; then
+	if client_alive; then
 		echo "✓ 1c-db уже отвечает (клиент подключён): $URL"
 		exit 0
 	fi
@@ -238,7 +249,20 @@ if [[ $HEADLESS -eq 1 ]]; then
 		echo "✗ --headless требует Xvfb" >&2
 		exit 2
 	fi
-	setsid Xvfb :97 -screen 0 1920x1080x24 >/dev/null 2>&1 &
+	XVFB_LOG="/tmp/1c-db-xvfb-$HASH.log"
+	setsid Xvfb :97 -screen 0 1920x1080x24 >"$XVFB_LOG" 2>&1 &
+	# ждём X-сокет: клиент стартует мгновенно и без него падает «Unable to
+	# initialize GTK» — это была реальная поломка прогона
+	XREADY=0
+	for _ in $(seq 1 20); do
+		if [[ -S /tmp/.X11-unix/X97 ]]; then XREADY=1; break; fi
+		sleep 0.5
+	done
+	if [[ $XREADY -ne 1 ]]; then
+		echo "✗ Xvfb :97 не поднялся за 10с; лог: $XVFB_LOG" >&2
+		tail -3 "$XVFB_LOG" >&2
+		exit 2
+	fi
 	echo "• Xvfb :97 поднят (pid $!)"
 	CHILD_ENV+=(DISPLAY=:97)
 else
@@ -250,8 +274,9 @@ echo $! > "$PIDFILE"
 echo "• клиент запущен (pid $(cat "$PIDFILE")); режим $DBMODE; лог: $LOG"
 
 echo -n "• жду подключения клиента к $URL "
-for _ in $(seq 1 90); do
-	if curl -so /dev/null --max-time 4 "${URL%/mcp}/1c/poll" 2>/dev/null; then
+# первый старт под Xvfb с software-GL грузит интерфейс до ~3 минут — норма
+for _ in $(seq 1 210); do
+	if client_alive; then
 		echo "— ✓ 1c-db работает: клиент опрашивает прокси, MCP на $URL"
 		exit 0
 	fi

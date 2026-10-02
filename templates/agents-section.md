@@ -38,7 +38,8 @@
 
 Поведение проверяется e2e-тестами, которые агент пишет сам (write-first,
 readback, ЖР-сверка; workflows `1c-e2e-author` / `1c-e2e-run`), данные —
-MCP `1c-db`. Юнит-тесты, написанные агентом, не поддерживаются; унаследованные
+MCP `1c-db`. Три уровня: логика (execute_code), API (HTTP), GUI (testpilot) —
+все pytest в `tests/e2e/`. Юниты на yAxUnit не пишутся; унаследованные
 Vanessa-фичи лежат в `docs/omp-migrated/tests/` только как источник
-конвертации в `tests/e2e/` — исполнять их нельзя.
+конвертации — исполнять их нельзя.
 <!-- END 1C CONTOUR -->
