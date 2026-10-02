@@ -142,12 +142,23 @@ if [[ $MODE == proxy_only ]]; then
 fi
 
 if [[ $MODE == stop ]]; then
-	if [[ -f "$PIDFILE" ]] && kill "$(cat "$PIDFILE")" 2>/dev/null; then
-		rm -f "$PIDFILE"
-		echo "• клиент 1С остановлен"
-	else
-		echo "• pidfile клиента не найден или процесс погашен"
+	# Реальный ELF клиента может жить за shim-обёрткой (podman/distrobox-exec):
+	# pidfile указывает лишь на обёртку, kill по pidfile оставлял клиента живым,
+	# а базу — занятой (второй сеанс тогда намертво висит на «Загрузка
+	# конфигурационной информации»). Гасим по уникальному маркеру обработки
+	# в cmdline и проверяем факт.
+	MARKER="$ROOT/$EPF_REL"
+	pkill -f -- "$MARKER" 2>/dev/null || true
+	for _ in 1 2 3 4 5; do
+		pgrep -f -- "$MARKER" >/dev/null || break
+		sleep 1
+	done
+	if pgrep -f -- "$MARKER" >/dev/null; then
+		pkill -9 -f -- "$MARKER" 2>/dev/null || true
+		echo "• клиент 1С добит принудительно" >&2
 	fi
+	rm -f "$PIDFILE"
+	echo "• клиент 1С остановлен"
 	stop_proxy
 	exit 0
 fi

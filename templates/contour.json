@@ -4,7 +4,8 @@
 	},
 	"1c": {
 		"publish": {
-			"port": 8414
+			"port": 8414,
+			"http_services": []
 		}
 	},
 	"1c_db": {

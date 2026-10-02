@@ -89,23 +89,52 @@ start)
 	fi
 	[ -d "$BASE" ] || { echo "✗ нет каталога базы: $BASE" >&2; exit 2; }
 	mkdir -p "$WORK/data"
-	UUID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
-	cat > "$WORK/ibases.json" <<EOF
-server:
-  address: 127.0.0.1
-  port: $PORT
-database:
-  path: $BASE
-infobase:
-  id: $UUID
-  name: e2e-publish
-  distribute-licenses: yes
-  schedule-jobs: deny
-  disable-local-speech-to-text: no
-  access-right-audit-events-recording: no
-http:
-  base: /
-EOF
+	# Формат публикации HTTP-сервисов автономного сервера: http — список
+	# публикаций, внутри http-services/service (Руководство администратора,
+	# «Автономный сервер»); адрес сервиса — /hs/{root}/… . Список сервисов —
+	# contour.json (1c.publish.http_services: [{name, root}] или [имя…]);
+	# пусто — базовая публикация без сервисов (заголовок http.base сам по себе
+	# сервисы НЕ публикует — все /hs/* отдавали 404, найдено живой проверкой).
+	python3 - "$WORK/ibases.json" "$PORT" "$BASE" "$ROOT/.zcode/1c/contour.json" <<'PY'
+import json, pathlib, sys, uuid
+out, port, base, cfg_path = sys.argv[1:5]
+services = []
+try:
+    pub = json.loads(pathlib.Path(cfg_path).read_text(encoding="utf-8")).get("1c", {}).get("publish", {})
+    services = pub.get("http_services") or []
+except Exception:
+    pass
+lines = [
+    "server:",
+    "  address: 127.0.0.1",
+    f"  port: {port}",
+    "database:",
+    f"  path: {base}",
+    "infobase:",
+    f"  id: {uuid.uuid4()}",
+    "  name: e2e-publish",
+    "  distribute-licenses: yes",
+    "  schedule-jobs: deny",
+    "  disable-local-speech-to-text: no",
+    "  access-right-audit-events-recording: no",
+    "http:",
+    "  - base: /",
+]
+entries = []
+for svc in services:
+    if isinstance(svc, str):
+        svc = {"name": svc}
+    entries.append(
+        f"        - name: {svc['name']}\n"
+        f"          root: {svc.get('root') or svc['name']}\n"
+        "          publish: true"
+    )
+if entries:
+    lines.append("    http-services:")
+    lines.append("      service:")
+    lines.extend(entries)
+pathlib.Path(out).write_text("\n".join(lines) + "\n", encoding="utf-8")
+PY
 	echo "→ поднимаю публикацию $BASE на :$PORT"
 	# shellcheck disable=SC2086
 	eval "$IBSRV_LINE" --data="$WORK/data" --config="$WORK/ibases.json" \
