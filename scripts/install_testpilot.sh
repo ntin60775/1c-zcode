@@ -7,7 +7,8 @@
 set -euo pipefail
 
 PIN="${TESTPILOT_PIN:-1c-testpilot[allure]>=1.8,<2}"
-ONEDB_PIN="${ONEC_DB_PIN:-1c-onec-db @ git+https://github.com/ntin60775/1c-onec-db.git@v0.1.3}"
+# wheel из релиза — ставится голым pip по https, без git; fallback — git+https
+ONEDB_PIN="${ONEC_DB_PIN:-https://github.com/ntin60775/1c-onec-db/releases/download/v0.1.3/1c_onec_db-0.1.3-py3-none-any.whl}"
 VENV="$HOME/.local/venvs/1c-testpilot"
 BIN="$HOME/.local/bin"
 
