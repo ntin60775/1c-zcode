@@ -11,6 +11,10 @@
       "to": ".zcode/skills/1c-test-contour"
     },
     {
+      "from": "skills/1c-testpilot",
+      "to": ".zcode/skills/1c-testpilot"
+    },
+    {
       "from": "skills/1c-db-data",
       "to": ".zcode/skills/1c-db-data"
     },

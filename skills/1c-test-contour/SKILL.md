@@ -45,7 +45,7 @@ Xvfb на каждый запуск) и сам гасится после про�
      ~/.local/venvs/1c-testpilot/bin/python -c '
    from testpilot import Client
    c = Client(profile="main")            # сам поднимет тест-клиент
-   c.execute_command(command="e1cib/data/Справочник.X")
+   c.execute_command(command="e1cib/list/Справочник.X")  # список, не data!
    form = c.find_object(cls="ManagedForm", timeout=30)
    print(form.get_context())             # имена формы и элементов
    c.close(); c.stop_client()'           # не оставлять клиента висеть
@@ -58,7 +58,7 @@ Xvfb на каждый запуск) и сам гасится после про�
 
    @pytest.fixture
    def form(testpilot):
-       testpilot.execute_command(command="e1cib/data/Справочник.X")
+       testpilot.execute_command(command="e1cib/list/Справочник.X")  # список!
        f = testpilot.find_object(cls="ManagedForm", timeout=30)
        assert f.get_context()["form"]["form_name"].startswith("Справочник.X.")
        return f
@@ -202,6 +202,10 @@ def test_проверка_суммы(onec_db, json):
   вердикт.
 - **`1c-e2e-run`** — прогон написанных тестов: pytest (модель не участвует) →
   при фейле расследование → независимая ЖР-сверка → вердикт.
+
+Операции, подключение (launch/attach), e1cib-навигация и GUI-ловушки —
+словарь `1c-testpilot` (интерфейсная карта; апстрим-дока TOOLS.md — полный
+справочник операций).
 
 ## Грабли
 

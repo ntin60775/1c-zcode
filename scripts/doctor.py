@@ -34,7 +34,7 @@ for _rel in ("../../hooks", "../hooks"):
 from contour_common import contour_config
 
 UNICA_MIN = "0.13.0"
-CONTOUR_SKILLS = {"1c-contour", "1c-test-contour", "1c-db-data",
+CONTOUR_SKILLS = {"1c-contour", "1c-test-contour", "1c-testpilot", "1c-db-data",
                   "1c-project-bootstrap", "bsp"}
 USER_SKILL_ROOTS = (Path.home() / ".zcode" / "skills", Path.home() / ".agents" / "skills")
 
