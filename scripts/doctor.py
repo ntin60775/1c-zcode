@@ -58,7 +58,9 @@ def version_ge(a: str, b: str) -> bool:
 
 
 def main() -> int:
-	root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
+	flags_or_args = sys.argv[1:]
+	positional = [a for a in flags_or_args if not a.startswith("--")]
+	root = Path(positional[0]).resolve() if positional else Path.cwd()
 	issues = []
 	warnings = []
 
@@ -187,6 +189,7 @@ def main() -> int:
 		ok("Xvfb на месте (изолированный дисплей e2e)")
 
 	# ── 3. Проектные файлы ──
+	v8text = ""
 	if (root / "v8project.yaml").is_file():
 		ok("v8project.yaml на месте")
 		try:

@@ -85,14 +85,21 @@ def plugin_hooks_to_config(root: Path) -> dict:
 def merge_hooks(config: dict, wired: dict) -> None:
 	hooks = config.setdefault("hooks", {})
 	hooks["enabled"] = True
-	for event, our_entries in wired.items():
+	# Workspace-схема ZCode читает конфиг-хуки только из hooks.events.<Event>;
+	# записи напрямую в hooks.<Event> рантайм не видит — переносим их в events.
+	legacy = {ev: hooks.pop(ev) for ev in list(hooks) if ev in HOOK_EVENTS}
+	events = hooks.setdefault("events", {})
+	for event in set(wired) | set(legacy):
+		pool = list(legacy.get(event) or []) + list(events.get(event) or [])
 		foreign = []
-		for entry in hooks.get(event) or []:
+		for entry in pool:
 			args = [a for h in entry.get("hooks") or [] for a in (h.get("args") or [])]
 			if any(isinstance(a, str) and ".zcode/hooks/" in a for a in args):
 				continue  # наша прежняя запись — заменяем
 			foreign.append(entry)
-		hooks[event] = foreign + our_entries
+		ours = wired.get(event) or []
+		if foreign or ours:
+			events[event] = foreign + ours
 
 
 # ── mcp ──────────────────────────────────────────────────────────────────────

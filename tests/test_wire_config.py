@@ -58,7 +58,12 @@ def main() -> int:
 		config = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8"))
 
 		check("hooks.enabled выставлен", config.get("hooks", {}).get("enabled") is True, str(config.get("hooks", {}).keys()))
-		pre = config["hooks"]["PreToolUse"]
+		check("хуки в hooks.events (workspace-схема)",
+		      isinstance(config.get("hooks", {}).get("events"), dict)
+		      and "PreToolUse" in config["hooks"]["events"]
+		      and "PreToolUse" not in {k: v for k, v in config["hooks"].items() if k not in ("enabled", "events", "timeoutMs", "maxOutputBytes")},
+		      str(config.get("hooks", {}).keys()))
+		pre = config["hooks"]["events"]["PreToolUse"]
 		args = [a for entry in pre for h in entry["hooks"] for a in h["args"]]
 		check("путь хука переписан на .zcode/hooks/", any(".zcode/hooks/retry_gate.py" in str(a) for a in args), str(args))
 		check("макрос PLUGIN_ROOT не остался", not any("PLUGIN_ROOT" in str(a) for a in args), str(args))
@@ -79,25 +84,38 @@ def main() -> int:
 		check("--check зелёный после wire", r.returncode == 0, r.stdout[:200])
 
 		# ── --check ловит расхождение ──
-		config["hooks"]["PreToolUse"] = []
+		config["hooks"]["events"]["PreToolUse"] = []
 		(root / ".zcode" / "config.json").write_text(
 			json.dumps(config, ensure_ascii=False), encoding="utf-8")
 		r = run_vendored("--check")
 		check("--check красный при расхождении", r.returncode == 1, r.stdout[:200])
 
 		# ── чужие hook-записи сохраняются ──
-		config["hooks"]["PreToolUse"] = [
+		config["hooks"]["events"]["PreToolUse"] = [
 			{"matcher": "^Bash$", "hooks": [{"type": "process", "command": "my-own-hook"}]},
-			*[e for e in config["hooks"].get("PreToolUse", [])],
+			*[e for e in config["hooks"]["events"].get("PreToolUse", [])],
 		]
 		(root / ".zcode" / "config.json").write_text(
 			json.dumps(config, ensure_ascii=False), encoding="utf-8")
 		run_vendored()
 		config2 = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8"))
-		commands = [h.get("command") for e in config2["hooks"]["PreToolUse"] for h in e["hooks"]]
+		commands = [h.get("command") for e in config2["hooks"]["events"]["PreToolUse"] for h in e["hooks"]]
 		check("чужая hook-запись сохранена", "my-own-hook" in commands, str(commands))
 		check("наша запись не задублирована",
 		      sum(1 for c in commands if c == "python3") == 1, str(commands))
+
+		# ── legacy-записи из hooks.<Event> переносятся в hooks.events ──
+		config2["hooks"]["PreToolUse"] = [
+			{"matcher": "^Bash$", "hooks": [{"type": "process", "command": "legacy-own-hook"}]}]
+		(root / ".zcode" / "config.json").write_text(
+			json.dumps(config2, ensure_ascii=False), encoding="utf-8")
+		run_vendored()
+		config3 = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8"))
+		cmds = [h.get("command") for e in config3["hooks"]["events"]["PreToolUse"] for h in e["hooks"]]
+		check("legacy-запись переехала в events",
+		      "legacy-own-hook" in cmds and "PreToolUse" not in config3["hooks"], str(config3["hooks"].keys()))
+		check("legacy-перенос без дублей нашей записи",
+		      sum(1 for c in cmds if c == "python3") == 1, str(cmds))
 
 		# ── url из contour.json подставляется ──
 		c1 = root / ".zcode" / "1c" / "contour.json"
