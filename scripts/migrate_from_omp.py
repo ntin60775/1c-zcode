@@ -237,6 +237,19 @@ def main() -> int:
 		print(f"✗ {root} — следа старого контура нет ({OMP_DIR}/); миграция не нужна")
 		return 1
 
+	if not test_only:
+		# Префлайт до первой мутации: шаги 3 и 9 требуют вендоренного контура;
+		# без проверки миграция падает в середине, оставив проект полумигрированным.
+		missing = [str(p.relative_to(root)) for p in (
+			root / ".zcode" / "1c" / "scripts" / "wire_config.py",
+			root / ".zcode" / "1c" / "templates" / "agents-section.md") if not p.is_file()]
+		if missing:
+			print("✗ контур не вендорен в проекте (нет: " + ", ".join(missing) + ") — сначала:")
+			print("    python3 <sot-zcode-marketplace>/deploy/deploy-plugin.py install 1c-zcode <корень>")
+			if apply:
+				return 1
+			print("  (dry-run продолжается; --apply прервётся здесь же)")
+
 	if test_only:
 		print(f"Проект: {root}")
 		print("Режим: ТОЛЬКО тест-стек Vanessa/xUnit (--test-stack-only)")
@@ -466,10 +479,17 @@ def main() -> int:
 			rel = path.relative_to(root)
 			if path.is_file() and ".git/" not in str(rel) and path.suffix in (
 					".md", ".sh", ".py", ".json", ".yaml", ".yml", ".txt", ".ts"):
+				# .zcode/ — вендоренный слой контура: канон конвертации сам
+				# упоминает Vanessa/yaxunit; секция AGENTS.md — тоже новый контур.
+				if rel.parts[0] in (".git", ".zcode"):
+					continue
 				try:
 					text = path.read_text(encoding="utf-8", errors="ignore")
 				except OSError:
 					continue
+				if rel == Path("AGENTS.md"):
+					text = re.sub(re.escape(SECTION_BEGIN) + r"[\s\S]*?"
+					              + re.escape(SECTION_END), "", text)
 				for line in text.splitlines():
 					if CLEAN_GREP.search(line):
 						dirty.append(f"{rel}: {line.strip()[:100]}")
