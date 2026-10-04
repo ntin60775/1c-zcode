@@ -117,10 +117,13 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 			exit 2
 		fi
 		# Тестовый контур: логика-тесты пишут/удаляют данные фикстур, поэтому
-		# «Записать»/«Удалить» НЕ блокируются; системные опасности (COM, файлы,
-		# монопольный/привилегированный режимы) остаются заблокированы.
+		# «Записать»/«Удалить» НЕ блокируются; привилегированный и монопольный
+		# режимы разрешены всегда (решение владельца 2026-10-04:
+		# allow_privileged_mode; монополия нужна сценариям обновления базы по
+		# результатам тестов — вызвавший обязан снять режим сам). COM, файлы
+		# и внешние компоненты остаются заблокированы.
 		# Прод защищён независимо: mcp_gate блокирует execute_code в прод-контуре.
-		DANGER_KEEP="УдалитьФайлы,DeleteFiles,КопироватьФайл,CopyFile,ПереместитьФайл,MoveFile,СоздатьКаталог,CreateDirectory,COMОбъект,COMObject,УстановитьПривилегированныйРежим,SetPrivilegedMode,ПодключитьВнешнююКомпоненту,AttachAddIn,УстановитьВнешнююКомпоненту,InstallAddIn,УстановитьМонопольныйРежим,SetExclusiveMode"
+		DANGER_KEEP="УдалитьФайлы,DeleteFiles,КопироватьФайл,CopyFile,ПереместитьФайл,MoveFile,СоздатьКаталог,CreateDirectory,COMОбъект,COMObject,ПодключитьВнешнююКомпоненту,AttachAddIn,УстановитьВнешнююКомпоненту,InstallAddIn"
 		( cd "$TOOLKIT" && setsid env PORT="$PORT" DANGEROUS_KEYWORDS="$DANGER_KEEP" \
 			"$VENV/bin/python" -m onec_mcp_toolkit_proxy >"$PROXY_LOG" 2>&1 & echo $! > "$PROXY_PIDFILE" )
 		echo "• прокси поднят (pid $(cat "$PROXY_PIDFILE")); лог: $PROXY_LOG"
