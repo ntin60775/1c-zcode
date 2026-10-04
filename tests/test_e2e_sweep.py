@@ -64,12 +64,12 @@ class Handler(BaseHTTPRequestHandler):
 			code = req["params"]["arguments"]["code"]
 			if "Удалить" in code:
 				self.server.deleted_calls += 1
-				rows = re.findall(r'Добавить\("([^"]+)"\)', code)
 				if self.server.clean_after_apply:
 					self.server.cleaned = True
-					result = {"deleted": len(rows), "failed": []}
+					result = {"found": len(ITEMS), "deleted": len(ITEMS), "failed": []}
 				else:
-					result = {"deleted": 0, "failed": rows}
+					result = {"found": len(ITEMS), "deleted": 0,
+					          "failed": [i["t"] + ": " + i["n"] for i in ITEMS]}
 				return self._respond({"jsonrpc": "2.0", "id": req["id"], "result": {
 					"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]}})
 			# check: маркер доходит до запроса?
