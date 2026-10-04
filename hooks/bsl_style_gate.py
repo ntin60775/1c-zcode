@@ -22,6 +22,7 @@
 
 Журнал: rule-audit.jsonl, rule: "bsl-style-gate".
 """
+import json
 import os
 import re
 import shutil
@@ -227,7 +228,14 @@ def main() -> int:
 	audit(RULE, ", ".join(targets),
 	      f"нарушения стиля в изменённых строках ({len(blocks)})",
 	      "blocked" if HARD_BLOCK else "advisory")
-	sys.stderr.write("\n".join(header + ["", *blocks]) + "\n")
+	reason = "\n".join(header + ["", *blocks])
+	sys.stderr.write(reason + "\n")
+	# Рантайм ZCode не доставляет модели stderr блокирующего PostToolUse
+	# (живой пруф sess_52a3e8cc: Edit отвечает «updated successfully»).
+	# Канал доставки — stdout JSON additionalContext: попадает в разговор.
+	if HARD_BLOCK:
+		sys.stdout.write(json.dumps(
+			{"additionalContext": reason}, ensure_ascii=False) + "\n")
 	return 2 if HARD_BLOCK else 0
 
 

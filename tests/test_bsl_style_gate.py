@@ -6,6 +6,7 @@
 
 Запуск: python3 tests/test_bsl_style_gate.py
 """
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -59,6 +60,16 @@ def main() -> int:
 		check("Write: нарушение в файле блокирует (exit 2)", r.returncode == 2,
 		      f"exit {r.returncode}")
 		check("Write: отчёт в stderr", "tab-rhythm" in r.stderr, r.stderr[:200])
+		# рантайм ZCode не доставляет stderr PostToolUse модели — канал доставки
+		# additionalContext в stdout-JSON (живой пруф sess_52a3e8cc)
+		additional = None
+		try:
+			additional = json.loads(r.stdout).get("additionalContext")
+		except ValueError:
+			pass
+		check("Write: additionalContext в stdout с причиной",
+		      isinstance(additional, str) and "tab-rhythm" in additional,
+		      (r.stdout or "")[:200])
 		check("нарушение в журнале (blocked)", any(
 			e.get("rule") == "bsl-style-gate"
 			for e in audit_entries(state, "bsl-style-gate")), "нет записи")
