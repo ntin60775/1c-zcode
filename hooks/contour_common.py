@@ -22,7 +22,8 @@ SOURCE_PREFIXES = (
 	"src/cfe/",
 	"src/epf/",
 	"src/erf/",
-	"tests/cfe/",
+	# tests/cfe/ исключён (демонтаж юнит-стека YAxUnit, пилот 2026-10-04):
+	# каталога больше нет; переехавшие e2e-тесты — python, не исходники 1С.
 	"tests/epf/",
 )
 
