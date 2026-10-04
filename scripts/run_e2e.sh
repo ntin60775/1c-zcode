@@ -127,4 +127,24 @@ summary["passed"] = max(summary["passed"], 0)
 print("E2E_SUMMARY_JSON " + json.dumps(summary, ensure_ascii=False))
 PY
 
+# ── постпроверка остатков Е2Е-данных: зачистка машиной, не памятью агента ──
+# Изоляция без транзакционного отката (см. scripts/e2e_sweep.py): тестовые
+# данные носят маркер, sweep находит остатки, удаляет и красит прогон,
+# если вычистить не удалось. Прокси недоступен — WARN, прогон не портим.
+SWEEP="$(cd "$(dirname "$0")" && pwd)/e2e_sweep.py"
+if [ -f "$SWEEP" ]; then
+	set +e
+	python3 "$SWEEP" "$ROOT" --apply --json \
+		> "$ROOT/test-results/e2e-sweep.json" 2> "$ROOT/test-results/e2e-sweep.err"
+	SRC=$?
+	set -e
+	if [ "$SRC" = "2" ]; then
+		echo "WARN: постпроверка остатков Е2Е-данных недоступна — прокси 1c-db не отвечает" >&2
+	elif [ "$SRC" != "0" ]; then
+		echo "✗ остатки Е2Е-данных после зачистки — см. test-results/e2e-sweep.json:" >&2
+		python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('   было', d['found_before'], '| удалено', d['deleted'], '| осталось', d['found_after'])" "$ROOT/test-results/e2e-sweep.json" >&2
+		[ "$RC" = "0" ] && RC=3
+	fi
+fi
+
 exit "$RC"
