@@ -21,7 +21,7 @@ when_to_use: "Любая работа в проекте 1С с Unica: чтени
 | `unica.docs` | чтение | документация: platform-help / development-standard / configuration-documentation |
 | `unica.apply` | **план → запись** | ВСЕ правки: свойства, реквизиты, формы, BSL-код, роли, СКД, макеты, подсистемы, XDTO, поддержка поставщика |
 | `unica.check` | чтение | валидация узла после правки (валидатор по виду: cf/cfe/form/dcs/mxl/role/…) |
-| `unica.run {op}` | действие | сборка/ИБ: `push` (force, full), `upload`, `apply`, `reset`, `make`, `launch`, `infobase.*` |
+| `unica.run {op, args, dryRun}` | действие | сборка/ИБ: `push` (force, full), `upload`, `apply`, `reset`, `make`, `launch`, `infobase.*`. Аргументы операции — ВЛОЖЕННО в `args` (плоская форма отвергается); `dryRun: true\|false` обязателен явно; платформенные операции — async: ответ = задача, результат через `unica.task.result` (waitMs ≤ 7000) |
 | `unica.task.*` | — | durable-задачи: get/result/cancel (долгие вызовы) |
 
 Канон правки (сценарий S159): `search → view → apply (план) → apply (запись) →

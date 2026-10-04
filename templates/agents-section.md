@@ -7,7 +7,10 @@
 ### Поверхность Unica 0.13
 
 Чтение — `unica.search / view / diff / resolve / docs / check`; правка —
-`unica.apply` (план → запись); сборка/ИБ — `unica.run {op}`; источник
+`unica.apply` (план → запись); сборка/ИБ — `unica.run {op, args: {…},
+dryRun: true|false}` (аргументы операции — ВЛОЖЕННО в `args`; `dryRun`
+обязателен явно, платформенные операции возвращают async-задачу — результат
+через `unica.task.result`, waitMs ≤ 7000); источник
 контракта — словарь `unica.run {}` (вызов без op) и словари узлов (`view`).
 Канон правки: `search → view → apply (план) → apply (запись) → check/diff`.
 
