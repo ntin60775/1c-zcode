@@ -16,7 +16,7 @@ bootstrap и миграция. Нативный порт [1c-omp](../1c-omp) н�
 | `skills/` | `1c-contour` (карта контура, приоритеты качества), `1c-test-contour` (e2e), `1c-db-data` (данные базы), `1c-project-bootstrap` |
 | `commands/` | `/1c-doctor`, `/1c-test`, `/1c-bootstrap`, `/1c-migrate-from-omp` |
 | `workflows/` | `1c-e2e-author` (агент сам пишет e2e-тест), `1c-e2e-run` (прогон pytest без модели + ЖР-сверка и приёмка-кодом) |
-| `scripts/` | `wire_config.py` (разводка `.zcode/config.json`), `init_worktree.sh`, `migrate_from_omp.py`, `doctor.py`, `lint_skill_frontmatter.py`, `run_e2e.sh` (автономный e2e-прогон), `install_testpilot.sh` (+ пакет [1c-onec-db](https://github.com/ntin60775/1c-onec-db) — фикстуры уровня логики), `publish_ib.sh` (HTTP-публикация тестовой базы для API-тестов) |
+| `scripts/` | `wire_config.py` (разводка `.zcode/config.json`), `init_worktree.sh`, `migrate_from_omp.py`, `doctor.py`, `lint_skill_frontmatter.py`, `run_e2e.sh` (автономный e2e-прогон с постпроверкой/зачисткой Е2Е-данных — [e2e_sweep.py](scripts/e2e_sweep.py)), `e2e_sweep.py` (зачистка и проверка остатков по маркеру), `install_testpilot.sh` (+ пакет [1c-onec-db](https://github.com/ntin60775/1c-onec-db) — фикстуры уровня логики), `publish_ib.sh` (HTTP-публикация тестовой базы для API-тестов) |
 | `templates/` | contour.json, profiles.example.yaml, agents-section.md (секция AGENTS.md проекта) |
 | `deploy.json` | контракт v1 sot-zcode-marketplace (вендоринг в `<repo>/.zcode/`) |
 | `docs/` | migration-map, UNICA (каналы), MIGRATION-FROM-OMP |

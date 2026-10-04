@@ -106,6 +106,8 @@ if (run.exitCode !== 0 || (run.summary !== null && run.summary.collected === 0))
 
 phase("Вердикт приёмки и отчёт");
 // Вердикт считает код — модель не может «оценить» прогон зелёным.
+// exit 3 run_e2e.sh = зелёный pytest, но остатки Е2Е-данных после sweep
+// (зачистка в run_e2e.sh). Ложнозелёным быть не должно — красный с причиной.
 const s = run.summary;
 const verdictOk =
 	run.exitCode === 0 &&
@@ -118,6 +120,7 @@ const verdictOk =
 	scan.errors.length === 0;
 const reasons: string[] = [];
 if (run.exitCode !== 0) reasons.push("run_e2e.sh завершился с кодом " + run.exitCode);
+if (run.exitCode === 3) reasons.push("exit 3 = остатки Е2Е-данных после зачистки sweep — база грязная, тесты всерьёз не считаются зелёными");
 if (s === null) reasons.push("нет E2E_SUMMARY_JSON — прогон не дошёл до тестов");
 else {
 	if (!s.junit) reasons.push("junit-отчёт не создан — тесты не выполнились");
