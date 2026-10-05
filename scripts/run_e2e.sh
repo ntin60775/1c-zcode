@@ -15,6 +15,12 @@
 set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# Чужой корень = громкий отказ: git rev-parse из чужого репо успешен молча,
+# а профили/база/гейты от него — не те (регрессия publish_ib 2026-10-05)
+if [ ! -f "$ROOT/v8project.yaml" ] && [ ! -d "$ROOT/.zcode/1c" ]; then
+	echo "✗ корень $ROOT не похож на проект контура (нет v8project.yaml и .zcode/1c/) — запусти из корня проекта" >&2
+	exit 2
+fi
 PROFILE="${1:-${E2E_PROFILE:-main}}"
 TESTS="${2:-tests/e2e}"
 

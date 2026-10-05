@@ -15,7 +15,27 @@
 set -euo pipefail
 
 CMD="${1:-status}"
-ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+# ROOT — проект контура, НЕ CWD: вендоренный скрипт живёт в
+# <проект>/.zcode/1c/scripts, корень ищется подъёмом от самого скрипта
+# (вызов абсолютным путём из чужого каталога обязан работать); иначе
+# git-toplevel/пWD — и финальная валидация: чужой корень = громкий отказ,
+# а не молчаливая работа с чужим build/ и чужими гвоздями contour.json
+# (регрессия 2026-10-05: git rev-parse из другого репо успешен, скрипт
+# смешал BASE чужого проекта с WORK и настройками своего CWD).
+SELF="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+ROOT=""
+for CAND in "$SELF/../../.." "$SELF/../.."; do
+	CAND="$(cd "$CAND" 2>/dev/null && pwd)" || continue
+	if [ -f "$CAND/v8project.yaml" ] || [ -d "$CAND/.zcode/1c" ]; then
+		ROOT="$CAND"
+		break
+	fi
+done
+[ -n "$ROOT" ] || ROOT="$(git -C "$SELF" rev-parse --show-toplevel 2>/dev/null || pwd)"
+if [ ! -f "$ROOT/v8project.yaml" ] && [ ! -d "$ROOT/.zcode/1c" ]; then
+	echo "✗ корень $ROOT не похож на проект контура (нет v8project.yaml и .zcode/1c/) — запусти из корня проекта" >&2
+	exit 2
+fi
 BASE="${2:-$ROOT/build/ib}"
 WORK="$ROOT/build/.ibsrv"
 
