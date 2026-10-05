@@ -5,6 +5,7 @@
 	"1c": {
 		"publish": {
 			"port": 8414,
+			"ibsrv": "distrobox:auto",
 			"http_services": []
 		}
 	},

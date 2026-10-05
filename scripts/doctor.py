@@ -3,9 +3,12 @@
 
 Проверяет (без 1С и сети, кроме явных http-проб):
   1. Unica установлена и ровно один канал; версия >= UNICA_MIN.
-  2. 1c-testpilot в PATH + окружение e2e-прогонов (pytest в venv); API-публикация (ibsrv) резолвится.
-  3. Проектные файлы контура: v8project.yaml, .zcode/config.json (разводка
-     через wire_config --check), .zcode/1c/contour.json, profiles.yaml.
+  2. 1c-testpilot в PATH + окружение e2e-прогонов (pytest в venv); API-публикация (ibsrv):
+     env > contour.json (1c.testpilot.python, 1c.publish.ibsrv — в т.ч. режим
+     'distrobox:<имя>'/'distrobox:auto') > детект.
+  3. Проектные файлы контура: v8project.yaml (платформа — local-оверлей,
+     v8project.yaml, 1c.platform.path из contour.json), .zcode/config.json
+     (разводка через wire_config --check), .zcode/1c/contour.json, profiles.yaml.
   4. Стайл-чекер резолвится (env → PATH → вендоренный пак).
   5. Скилл bsp (БСП-пак) вендорен.
   6. Shadow-дубли контурных скиллов на пользовательском уровне.
@@ -63,6 +66,7 @@ def main() -> int:
 	root = Path(positional[0]).resolve() if positional else Path.cwd()
 	issues = []
 	warnings = []
+	contour = contour_config(str(root))
 
 	def ok(msg):
 		print(f"OK   {msg}")
@@ -139,15 +143,20 @@ def main() -> int:
 	else:
 		fail("1c-testpilot не найден в PATH (scripts/install_testpilot.sh)")
 
-	tp_env = os.environ.get("TESTPILOT_PYTHON") or str(
-		Path.home() / ".local" / "venvs" / "1c-testpilot" / "bin" / "python")
+	tp_env = (os.environ.get("TESTPILOT_PYTHON")
+	          or str((contour.get("1c", {}).get("testpilot") or {}).get("python") or "")
+	          or str(Path.home() / ".local" / "venvs" / "1c-testpilot" / "bin" / "python"))
 	if not Path(tp_env).is_file():
 		pipx = Path.home() / ".local" / "pipx" / "venvs" / "1c-testpilot" / "bin" / "python"
 		tp_env = str(pipx) if pipx.is_file() else ""
 	if tp_env:
-		probe = subprocess.run([tp_env, "-c", "import pytest, testpilot, onec_db"],
-			capture_output=True, text=True)
-		if probe.returncode == 0:
+		try:
+			probe = subprocess.run([tp_env, "-c", "import pytest, testpilot, onec_db"],
+			                       capture_output=True, text=True)
+			probe_rc = probe.returncode
+		except OSError:
+			probe_rc = 1
+		if probe_rc == 0:
 			ok(f"e2e-окружение testpilot готово (pytest + onec_db): {tp_env}")
 		else:
 			warn(f"в {tp_env} нет pytest/onec_db — e2e-прогоны недоступны; "
@@ -157,25 +166,41 @@ def main() -> int:
 		     "scripts/install_testpilot.sh")
 
 	# ── 2b. API-публикация (ibsrv; опциональный контур) ──
-	publish = {}
-	try:
-		publish = json.loads(
-			(root / ".zcode" / "1c" / "contour.json").read_text(encoding="utf-8")
-		).get("1c", {}).get("publish", {})
-	except Exception:
-		pass
+	publish = (contour.get("1c", {}).get("publish") or {})
 	pub_port = str(publish.get("port", "8414"))
 	ibsrv = os.environ.get("PUBLISH_IBSRV") or str(publish.get("ibsrv") or "")
-	if not ibsrv:
+	if ibsrv.startswith("distrobox:"):
+		name = ibsrv.split(":", 1)[1].strip()
+		if name and name != "auto":
+			try:
+				listed = subprocess.run(["distrobox", "list"], capture_output=True,
+				                        text=True, timeout=15)
+				names = {c.strip() for line in (listed.stdout or "").splitlines()
+				         for c in [line.split("|")[1].strip()] if len(line.split("|")) > 1}
+			except (OSError, subprocess.TimeoutExpired):
+				names = None
+			if names is None:
+				warn(f"ibsrv: задан контейнер {name}, но distrobox не отвечает — "
+				     "проверь: distrobox list")
+			elif name in names:
+				ok(f"ibsrv: distrobox-режим, контейнер {name} жив")
+			else:
+				warn(f"ibsrv: контейнер {name} не заведён (distrobox list) — "
+				     "создай его или поправь 1c.publish.ibsrv в contour.json")
+		else:
+			ok("ibsrv: distrobox-режим (auto) — резолвится по живым контейнерам "
+			   "при публикации")
+	elif not ibsrv:
 		import glob as _glob
 		hits = sorted(_glob.glob("/opt/1cv8/x86_64/*/ibsrv"))
 		ibsrv = hits[-1] if hits else ""
-	if ibsrv:
+	if ibsrv and not ibsrv.startswith("distrobox:"):
 		ok(f"ibsrv для API-публикации резолвится: {ibsrv}")
-	else:
-		warn("ibsrv (автономный сервер) на хосте не найден — publish_ib.sh будет "
-		     "искать его в distrobox-контейнерах; надёжнее PUBLISH_IBSRV или "
-		     "1c.publish.ibsrv в contour.json")
+	elif not ibsrv:
+		warn("ibsrv (автономный сервер 1С) на хосте не найден и в contour.json не "
+		     "задан — publish_ib.sh будет искать его в distrobox-контейнерах; "
+		     "надёжнее 1c.publish.ibsrv: 'distrobox:<имя>' в contour.json "
+		     "или env PUBLISH_IBSRV")
 	try:
 		with urllib.request.urlopen(f"http://127.0.0.1:{pub_port}/", timeout=5) as r:
 			if r.status == 200:
@@ -223,9 +248,12 @@ def main() -> int:
 	declared = local_platform or next(
 		(match.group(1) for match in
 		 (re.search(r"(?m)^\s*path\s*:\s*['\"]?(/opt/1cv8/\S+?)['\"]?\s*$", v8text),)
-		 if match), None)
+		 if match), None) \
+		or str((contour.get("1c", {}).get("platform") or {}).get("path") or "")
 	if declared and Path(declared).exists():
-		source = "локальный оверлей" if local_platform else "v8project.yaml"
+		source = ("локальный оверлей" if local_platform
+		          else "v8project.yaml" if re.search(r"(?m)^\s*path\s*:", v8text)
+		          else "contour.json")
 		ok(f"платформа на месте ({source}): {declared}")
 	elif declared:
 		found = sorted(str(p) for p in Path("/opt/1cv8/x86_64").glob("*/1cv8")) \
@@ -259,7 +287,8 @@ def main() -> int:
 	if (root / ".zcode" / "1c" / "contour.json").is_file():
 		ok("contour.json на месте")
 	else:
-		warn(".zcode/1c/contour.json нет — url 1c-db и override'ы по умолчанию")
+		warn(".zcode/1c/contour.json нет — прогони wire_config.py: он создаст "
+		     "каркас env-настроек (1c_db.url, publish, платформа, venv testpilot)")
 
 	if (root / ".zcode" / "testpilot" / "profiles.yaml").is_file():
 		ok("profiles.yaml testpilot на месте")
@@ -267,10 +296,7 @@ def main() -> int:
 		fail(".zcode/testpilot/profiles.yaml нет — e2e-контур не поднимется")
 
 	# 1c-db жив? (нужен клиент 1С с открытой MCP_Toolkit.epf)
-	try:
-		db_url = (json.loads((root / ".zcode" / "1c" / "contour.json").read_text(encoding="utf-8")).get("1c_db") or {}).get("url")
-	except (OSError, json.JSONDecodeError):
-		db_url = None
+	db_url = (contour.get("1c_db") or {}).get("url")
 	if db_url:
 		import urllib.error, urllib.request
 		try:

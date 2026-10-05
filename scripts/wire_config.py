@@ -17,6 +17,12 @@
 и вендоренно в проекте (.zcode/hooks/hooks.json, .zcode/1c/scripts/) —
 плагин-корень вычисляется от местоположения этого файла.
 
+Третья вещь — env-настройки контура: .zcode/1c/contour.json инициализируется
+каркасом по факту машины (1c_db.url, 1c.publish.ibsrv, платформа, venv
+testpilot). Существующие значения не затираются — дозаполняются только
+отсутствующие ключи; битый файл не трогается. --check contour.json не пишет
+и не проверяет (его контракт — только config.json).
+
 Режим --check: exit 1, если config.json не совпадает с ожидаемой разводкой
 (для CI и /1c-doctor). Секретов не пишет: креды тестовых баз живут в
 .zcode/testpilot/profiles.yaml через password_env.
@@ -29,6 +35,7 @@ from pathlib import Path
 
 CONFIG = ".zcode/config.json"
 CONTOUR = ".zcode/1c/contour.json"
+DEFAULT_DB_URL = "http://127.0.0.1:6003/mcp"
 HOOK_EVENTS = ("PreToolUse", "PostToolUse", "PostToolUseFailure", "SessionStart",
                "UserPromptSubmit", "PermissionRequest", "Stop")
 
@@ -43,6 +50,61 @@ def load_json(path: Path, default):
 def contour_of(root: Path) -> dict:
 	data = load_json(root / CONTOUR, {})
 	return data if isinstance(data, dict) else {}
+
+
+# ── contour.json: каркас env-настроек ────────────────────────────────────────
+
+def scaffold_contour(root: Path) -> dict:
+	"""Каркас env-настроек по факту машины; что не нашли — ключ не пишем."""
+	scaffold = {
+		"1c_db": {"url": DEFAULT_DB_URL},
+		"1c": {
+			# ibsrv всегда живёт в distrobox-контейнере (на хосте его нет):
+			# auto — искать по живым контейнерам при публикации
+			"publish": {"ibsrv": "distrobox:auto"},
+		},
+	}
+	platforms = sorted(str(p) for p in Path("/opt/1cv8/x86_64").glob("*/1cv8")) \
+		if Path("/opt/1cv8/x86_64").is_dir() else []
+	if len(platforms) == 1:
+		scaffold["1c"]["platform"] = {"path": platforms[0]}
+	tp_python = Path.home() / ".local" / "venvs" / "1c-testpilot" / "bin" / "python"
+	if tp_python.is_file():
+		scaffold["1c"]["testpilot"] = {"python": str(tp_python)}
+	_ = root  # root оставлен в сигнатуре: каркас может вырасти в проектные ключи
+	return scaffold
+
+
+def fill_missing(node: dict, extra: dict) -> list:
+	"""Дописать отсутствующие ключи (рекурсивно); существующие не трогаем."""
+	added = []
+	for key, value in extra.items():
+		if key not in node:
+			node[key] = value
+			added.append(key)
+		elif isinstance(node[key], dict) and isinstance(value, dict):
+			added += fill_missing(node[key], value)
+	return added
+
+
+def ensure_contour(root: Path) -> str:
+	"""Инициализация/дозаполнение contour.json; текст для отчёта."""
+	path = root / CONTOUR
+	scaffold = scaffold_contour(root)
+	if path.is_file():
+		existing = load_json(path, None)
+		if not isinstance(existing, dict):
+			return f"contour.json битый, не трогаю: {path}"
+		added = fill_missing(existing, scaffold)
+		if added:
+			path.write_text(json.dumps(existing, ensure_ascii=False, indent="\t") + "\n",
+			                encoding="utf-8")
+			return f"дозаполнен contour.json ({', '.join(added)}): {path}"
+		return f"contour.json полон: {path}"
+	path.parent.mkdir(parents=True, exist_ok=True)
+	path.write_text(json.dumps(scaffold, ensure_ascii=False, indent="\t") + "\n",
+	                encoding="utf-8")
+	return f"создан каркас env-настроек: {path}"
 
 
 # ── hooks ────────────────────────────────────────────────────────────────────
@@ -108,7 +170,7 @@ def merge_mcp(config: dict, root: Path, plugin_root: Path) -> None:
 	fragments = load_json(plugin_root / "scripts" / "mcp_fragments.json", {})
 	if not isinstance(fragments, dict) or not fragments:
 		return
-	url = (contour_of(root).get("1c_db") or {}).get("url") or "http://127.0.0.1:6003/mcp"
+	url = (contour_of(root).get("1c_db") or {}).get("url") or DEFAULT_DB_URL
 	servers = config.setdefault("mcp", {}).setdefault("servers", {})
 	for name, fragment in fragments.items():
 		server = json.loads(json.dumps(fragment))  # копия шаблона
@@ -131,6 +193,9 @@ def main() -> int:
 	flags = {a for a in sys.argv[1:] if a.startswith("--")}
 	positional = [a for a in sys.argv[1:] if not a.startswith("--")]
 	root = Path(positional[0]).resolve() if positional else Path.cwd()
+
+	if "--check" not in flags:
+		print(ensure_contour(root))
 
 	current = load_json(root / CONFIG, {})
 	if not isinstance(current, dict):

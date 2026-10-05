@@ -99,7 +99,9 @@ API-слой гоняется без GUI: публикация тестовой 
    База — `build/ib` (аргументом можно другую); порт — `contour.json →
    1c.publish.port`; сервер слушает только `127.0.0.1`, регламентные задания
    выключены. Резолв ibsrv: env `PUBLISH_IBSRV` → `contour.json 1c.publish.ibsrv`
-   → `/opt/1cv8/x86_64/*/ibsrv` → живой distrobox-контейнер (со WARN).
+   (`distrobox:<имя>` — только этот контейнер, `distrobox:auto` — поиск по
+   живым контейнерам, иначе путь/готовая команда) → при пустом значении:
+   `/opt/1cv8/x86_64/*/ibsrv` → живой distrobox-контейнер.
 2. **Тест** — обычный requests; URL и креды не хардкодятся:
    ```python
    import os, pytest, requests

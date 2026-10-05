@@ -126,6 +126,44 @@ def main() -> int:
 		      config3["mcp"]["servers"]["1c-db"]["url"] == "http://192.168.1.50:6003/mcp",
 		      config3["mcp"]["servers"]["1c-db"]["url"])
 
+		# ── каркас env-настроек: дозаполнение без затирания ──
+		contour3 = json.loads(c1.read_text(encoding="utf-8"))
+		check("пользовательский url 1c_db.url не затёрт каркасом",
+		      contour3["1c_db"]["url"] == "http://192.168.1.50:6003/mcp",
+		      str(contour3.get("1c_db")))
+		check("каркас добавил 1c.publish.ibsrv (distrobox-режим)",
+		      contour3.get("1c", {}).get("publish", {}).get("ibsrv") == "distrobox:auto",
+		      str(contour3.get("1c")))
+
+		# ── каркас не создаёт лишнего при повторном wire ──
+		before_contour = c1.read_text(encoding="utf-8")
+		run_vendored()
+		check("повторный wire не меняет полный contour.json",
+		      c1.read_text(encoding="utf-8") == before_contour, "файл изменился")
+
+		# ── отсутствующий contour.json создаётся каркасом ──
+		c1.unlink()
+		run_vendored()
+		contour4 = json.loads(c1.read_text(encoding="utf-8"))
+		check("создан каркас с 1c_db.url по умолчанию",
+		      contour4.get("1c_db", {}).get("url") == "http://127.0.0.1:6003/mcp",
+		      str(contour4.get("1c_db")))
+		check("создан каркас с publish.ibsrv=distrobox:auto",
+		      contour4.get("1c", {}).get("publish", {}).get("ibsrv") == "distrobox:auto",
+		      str(contour4.get("1c")))
+
+		# ── битый contour.json не трогается и не роняет wire ──
+		c1.write_text("{oops", encoding="utf-8")
+		r = run_vendored()
+		check("битый contour.json: wire выходит 0", r.returncode == 0, r.stderr[:200])
+		check("битый contour.json не перезаписан",
+		      c1.read_text(encoding="utf-8") == "{oops", "файл перезаписан")
+
+		# ── --check не создаёт contour.json ──
+		c1.unlink()
+		r = run_vendored("--check")
+		check("--check не создаёт contour.json", not c1.exists(), "файл появился")
+
 		return summary()
 
 

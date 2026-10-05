@@ -8,7 +8,9 @@
 #            ibsrv_cmd} — его читают API-тесты и агент;
 #   stop   — погасить публикацию; status — exit 0, если жива.
 # База: второй аргумент или build/ib от корня проекта. Порт и команда ibsrv —
-# contour.json (1c.publish.port, 1c.publish.ibsrv) или env PUBLISH_IBSRV.
+# contour.json (1c.publish.port, 1c.publish.ibsrv) или env PUBLISH_IBSRV;
+# ibsrv: пусто/путь/готовая команда | distrobox:auto (искать в контейнерах) |
+# distrobox:<имя> (только этот контейнер).
 # Сервер слушает только 127.0.0.1; регламентные задания выключены.
 set -euo pipefail
 
@@ -33,13 +35,27 @@ PY
 PORT="$(read_setting port)"; PORT="${PORT:-8414}"
 IBSRV_LINE="$(read_setting ibsrv)"; IBSRV_LINE="${PUBLISH_IBSRV:-$IBSRV_LINE}"
 
-# ── резолв ibsrv: env/contour → хост → живой distrobox-контейнер ──
+# ── резолв ibsrv: env/contour → режим distrobox:* (только контейнеры) →
+#    хост (пустое значение) → живой distrobox-контейнер ──
+# Формат 1c.publish.ibsrv / PUBLISH_IBSRV:
+#   пусто | хост-путь | "distrobox enter <C> -- <ibsrv>" — как раньше;
+#   "distrobox:auto"      — искать по всем живым контейнерам (хост не трогаем);
+#   "distrobox:<имя>"     — только указанный контейнер.
 NOTE=""
-if [ -z "$IBSRV_LINE" ]; then
+BOX_FILTER=""
+case "$IBSRV_LINE" in
+distrobox:auto|distrobox:)
+	IBSRV_LINE="" ;;
+distrobox:*)
+	BOX_FILTER="${IBSRV_LINE#distrobox:}"
+	IBSRV_LINE="" ;;
+esac
+if [ -z "$IBSRV_LINE" ] && [ -z "$BOX_FILTER" ]; then
 	IBSRV_LINE="$(ls /opt/1cv8/x86_64/*/ibsrv 2>/dev/null | sort | tail -1 || true)"
 fi
 if [ -z "$IBSRV_LINE" ] && command -v distrobox >/dev/null 2>&1; then
 	for C in $(distrobox list 2>/dev/null | awk -F'|' 'NR>1 {gsub(/ /,"",$2); print $2}'); do
+		if [ -n "$BOX_FILTER" ] && [ "$C" != "$BOX_FILTER" ]; then continue; fi
 		FOUND="$(distrobox enter "$C" -- sh -c 'ls /opt/1cv8/x86_64/*/ibsrv 2>/dev/null | sort | tail -1' 2>/dev/null || true)"
 		if [ -n "$FOUND" ]; then
 			IBSRV_LINE="distrobox enter $C -- $FOUND"
@@ -49,8 +65,12 @@ if [ -z "$IBSRV_LINE" ] && command -v distrobox >/dev/null 2>&1; then
 	done
 fi
 if [ -z "$IBSRV_LINE" ]; then
-	echo "✗ ibsrv (автономный сервер 1С) не найден: ни в /opt/1cv8, ни в контейнерах distrobox" >&2
-	echo "  задай PUBLISH_IBSRV='<команда запуска ibsrv>' или 1c.publish.ibsrv в .zcode/1c/contour.json" >&2
+	if [ -n "$BOX_FILTER" ]; then
+		echo "✗ ibsrv (автономный сервер 1С) не найден в контейнере $BOX_FILTER" >&2
+	else
+		echo "✗ ibsrv (автономный сервер 1С) не найден: ни в /opt/1cv8, ни в контейнерах distrobox" >&2
+	fi
+	echo "  задай 1c.publish.ibsrv ('distrobox:<имя>' или '<команда запуска ibsrv>') в .zcode/1c/contour.json или env PUBLISH_IBSRV" >&2
 	exit 2
 fi
 

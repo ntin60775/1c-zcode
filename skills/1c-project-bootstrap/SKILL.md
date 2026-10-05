@@ -12,9 +12,12 @@ when_to_use: "Проект 1С подключается к контуру (вп�
 
 ## Порядок
 
-1. **`.zcode/1c/contour.json`** — контурный конфиг (если нет):
-   скопируй `.zcode/1c/templates/contour.json`, поправь url `1c-db`
-   (машина с 1С) и имя профиля testpilot.
+1. **`.zcode/1c/contour.json`** — контурный конфиг. Каркас env-ключей
+   (`1c_db.url`, `1c.publish.ibsrv` — по факту машины) создаёт
+   `wire_config.py` (шаг 3) сам; руками дозаполняй проектные ключи из
+   шаблона `.zcode/1c/templates/contour.json` — профиль testpilot,
+   `http_services`, `mcp_gate.dangerous`, `style.pack`. Существующие
+   значения wire не затирает.
 2. **`.zcode/testpilot/profiles.yaml`** — профили тестовых баз (если нет):
    по образцу `.zcode/1c/templates/profiles.example.yaml`. Пароли — только
    `password_env`; значения переменных живут вне git (окружение машины).

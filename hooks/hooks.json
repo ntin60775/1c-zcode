@@ -90,6 +90,15 @@
               "${CLAUDE_PLUGIN_ROOT}/hooks/retry_gate.py"
             ],
             "timeoutMs": 5000
+          },
+          {
+            "type": "process",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/worktree_hint.py"
+            ],
+            "timeoutMs": 5000,
+            "statusMessage": "1c-zcode: ворктри-навигация"
           }
         ]
       },
@@ -133,6 +142,15 @@
               "${CLAUDE_PLUGIN_ROOT}/hooks/session_clean.py"
             ],
             "timeoutMs": 10000
+          },
+          {
+            "type": "process",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/session_context.py"
+            ],
+            "timeoutMs": 10000,
+            "statusMessage": "1c-zcode: ворктри-контекст сессии"
           }
         ]
       }
