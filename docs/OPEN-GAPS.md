@@ -94,7 +94,8 @@ G2, G3 — ЗАКРЫТЫ; G1 — в основном закрыт, парк р�
 Плагин вендорит skills/hooks/workflows/scripts/templates в `.zcode/`
 проекта, bootstrap пишет секцию AGENTS.md, `wire_config.py` подключает MCP
 и хуки. Внешние зависимости ставятся не одним пакетом, а по топологии:
-`1c-testpilot` — `scripts/install_testpilot.sh` (пин ==1.8.1), паки
+`1c-testpilot` — `scripts/install_testpilot.sh` (пин — git-тег апстрима,
+сейчас v1.9.0; в PyPI пакет не публикуется), паки
 `1c-bsl-code-style` и `1c-ssl-skills` — записями каталога
 sot-zcode-marketplace. Наличие и живость всего набора проверяет
 `/1c-doctor`. Это осознанная топология поставки, а не пробел.
