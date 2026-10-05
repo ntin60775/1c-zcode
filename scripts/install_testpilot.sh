@@ -6,7 +6,8 @@
 # вызывает команду `1c-testpilot` из PATH — после установки перезапусти сессию ZCode.
 set -euo pipefail
 
-PIN="${TESTPILOT_PIN:-1c-testpilot[allure]==1.8.1}"
+# PyPI пуст (404) — только git-теги апстрима; v-префикс обязателен (голый тег есть лишь у 1.8.1)
+PIN="${TESTPILOT_PIN:-1c-testpilot[allure] @ git+https://github.com/ROCTUP/1c-testpilot.git@v1.9.0}"
 # wheel из релиза — ставится голым pip по https, без git; fallback — git+https
 ONEDB_PIN="${ONEC_DB_PIN:-https://github.com/ntin60775/1c-onec-db/releases/download/v0.1.3/1c_onec_db-0.1.3-py3-none-any.whl}"
 VENV="$HOME/.local/venvs/1c-testpilot"
