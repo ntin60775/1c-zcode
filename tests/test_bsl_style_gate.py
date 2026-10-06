@@ -7,8 +7,11 @@
 Запуск: python3 tests/test_bsl_style_gate.py
 """
 import json
+import os
+import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -136,6 +139,140 @@ def main() -> int:
 		engine.chmod(0o755)
 		r = post("Write", {"file_path": bsl, "content": "…"}, env_checker=str(engine))
 		check("env-движок используется", "engine: bad" in r.stderr, r.stderr[:200])
+
+		# ══ бридж unica.apply (ишью #11): план → состояние → исполнение ════
+		# кейсы выше удалили фейк-чекер и проверили тихий пропуск без него —
+		# бридж гоняет тот же резолв, вернём фейк в прежнюю раскладку
+		pack_bridge = tree / ".zcode" / "style" / "scripts"
+		pack_bridge.mkdir(parents=True, exist_ok=True)
+		(pack_bridge / "bsl_style_check.py").write_text(FAKE_CHECKER, encoding="utf-8")
+
+		def post_unica(tool_input, tool="mcp__unica__unica_apply", sid="s1", state_dir=None):
+			return subprocess.run(
+				[sys.executable, str(Path(__file__).parent.parent / "hooks" / "bsl_style_gate.py")],
+				input=json.dumps({"hook_event_name": "PostToolUse", "session_id": sid,
+				                  "tool_name": tool, "tool_input": tool_input, "cwd": cwd}),
+				capture_output=True, text=True, cwd=cwd,
+				env={**os.environ, "ZCODE_1C_STATE_DIR": state_dir or state})
+
+		def plan_ops(text, at="main:CommonModule.М.Body"):
+			return [{"op": "code.insert", "args": {"at": at, "text": text}}]
+
+		def ctx(response):
+			try:
+				return json.loads(response.stdout).get("additionalContext") or ""
+			except ValueError:
+				return ""
+
+		plan_file = Path(state) / "state" / "1c" / "style-bridge" / "s1.json"
+
+		# план: advisory-снипет-чек до записи, план в состоянии сессии
+		bsl_disk = tree / bsl
+		bsl_disk.write_text("Если Хорошо Тогда\nКонецЕсли;\n", encoding="utf-8")
+		r = post_unica({"at": "main:CommonModule.М", "ops": plan_ops("Если ПЛОХО Тогда")})
+		check("apply план: advisory, не блок", r.returncode == 0, f"exit {r.returncode}")
+		check("apply план: снипет-чек в stderr", "tab-rhythm" in r.stderr and "фрагмент:" in r.stderr,
+		      r.stderr[:200])
+		check("apply план: additionalContext доставлен", "tab-rhythm" in ctx(r), r.stdout[:120])
+		check("apply план: план в состоянии сессии", plan_file.is_file(), str(plan_file))
+
+		# исполнение: правка уже на диске, нарушение в вставке — блок, план закрыт
+		bsl_disk.write_text("Если Хорошо Тогда\nЕсли ПЛОХО Тогда\n", encoding="utf-8")
+		r = post_unica({"executionToken": "tok-1"}, tool="mcp__plugin_unica_unica__unica_apply")
+		check("apply исполнение: нарушение вставки блокирует (exit 2)", r.returncode == 2,
+		      f"exit {r.returncode}")
+		check("apply исполнение: additionalContext с причиной", "tab-rhythm" in ctx(r),
+		      r.stdout[:200])
+		check("apply исполнение: план закрыт", not plan_file.exists())
+
+		# чистый план и чистое исполнение — тихо
+		r = post_unica({"at": "main:CommonModule.М",
+		                "ops": plan_ops("Если Хорошо Тогда\nКонецЕсли;")})
+		check("apply чистый план: тихо", r.returncode == 0 and "Предварительный" not in r.stderr,
+		      r.stderr[:120])
+		bsl_disk.write_text("Если Хорошо Тогда\nКонецЕсли;\n", encoding="utf-8")
+		r = post_unica({"executionToken": "tok-2"})
+		check("apply чистое исполнение: тихо", r.returncode == 0 and not r.stderr.strip(),
+		      r.stderr[:120])
+
+		# нарушение вне вставки (cold) не блокирует
+		r = post_unica({"at": "main:CommonModule.М", "ops": plan_ops("Комментарий хвоста")})
+		bsl_disk.write_text("Если ПЛОХО Тогда\nКомментарий хвоста\n", encoding="utf-8")
+		r = post_unica({"executionToken": "tok-3"})
+		check("apply: cold-нарушение вне вставки не блокирует",
+		      r.returncode == 0 and "вне твоей правки" in r.stderr,
+		      f"exit {r.returncode} / {r.stderr[:150]}")
+
+		# чередование plan A → plan B → exec A → exec B
+		bsl_disk.write_text("Заглушка\n", encoding="utf-8")
+		post_unica({"at": "main:CommonModule.М", "ops": plan_ops("Если ПЛОХО_А Тогда")})
+		post_unica({"at": "main:CommonModule.М", "ops": plan_ops("Если ПЛОХО_Б Тогда")})
+		bsl_disk.write_text("Заглушка\nЕсли ПЛОХО_А Тогда\n", encoding="utf-8")
+		r = post_unica({"executionToken": "tok-A"})
+		check("чередование: исполнение A блокирует по A", r.returncode == 2, f"exit {r.returncode}")
+		plans_after = json.loads(plan_file.read_text(encoding="utf-8")).get("plans") or []
+		check("чередование: план A закрыт, план B остался",
+		      len(plans_after) == 1 and "ПЛОХО_Б" in str(plans_after[0]), str(plans_after)[:150])
+		bsl_disk.write_text("Заглушка\nЕсли ПЛОХО_Б Тогда\n", encoding="utf-8")
+		r = post_unica({"executionToken": "tok-B"})
+		check("чередование: исполнение B блокирует по B", r.returncode == 2, f"exit {r.returncode}")
+		check("чередование: все планы закрыты", not plan_file.exists())
+
+		# потеря состояния (рестарт сессии) — тихий пропуск
+		r = post_unica({"executionToken": "tok-ghost"},
+		               state_dir=str(tmp_path / "empty-state"))
+		check("исполнение без состояния: тихий пропуск",
+		      r.returncode == 0 and not r.stderr.strip(), r.stderr[:120])
+
+		# TTL: просроченный план не проверяется
+		post_unica({"at": "main:CommonModule.М", "ops": plan_ops("Если ПЛОХО_Т Тогда")})
+		data = json.loads(plan_file.read_text(encoding="utf-8"))
+		data["plans"][0]["expires_ts"] = 1
+		plan_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+		bsl_disk.write_text("Если ПЛОХО_Т Тогда\n", encoding="utf-8")
+		r = post_unica({"executionToken": "tok-ttl"})
+		check("TTL: исполнение просроченного плана — тихий пропуск",
+		      r.returncode == 0 and not r.stderr.strip(), r.stderr[:120])
+
+		# session_clean выметает старые файлы бриджа вместе с прочими
+		sys.path.insert(0, str(Path(__file__).parent.parent / "hooks"))
+		from session_clean import purge_old_session_state  # noqa: E402
+		stale_time = time.time() - 8 * 86400
+		os.utime(plan_file, (stale_time, stale_time))
+		os.environ["ZCODE_1C_STATE_DIR"] = state  # чистка — в тестовое состояние
+		try:
+			removed = purge_old_session_state()
+		finally:
+			os.environ.pop("ZCODE_1C_STATE_DIR", None)
+		check("session_clean: старый файл бриджа выметается",
+		      removed >= 1 and not plan_file.exists(), f"removed={removed}")
+
+		# не-apply юника-вызовы мимо бриджа
+		r = post_unica({"at": "main:CommonModule.М"}, tool="mcp__unica__unica_view")
+		check("не-apply юника-вызов мимо бриджа",
+		      r.returncode == 0 and not r.stderr.strip(), r.stderr[:120])
+
+		# ops вне тел BSL-модулей (at не .Body) — план не сохраняется
+		r = post_unica({"at": "main:DataProcessor.М", "ops": [
+			{"op": "meta.edit", "args": {"at": "main:DataProcessor.М.Form",
+			                             "text": "Если ПЛОХО Тогда"}}]})
+		check("ops вне .Body: план не сохраняется",
+		      r.returncode == 0 and not plan_file.exists(), r.stderr[:120])
+
+		# неоднозначность: текст в двух файлах — проверяется объединение
+		second = tree / "src" / "cf" / "M" / "Второй.bsl"
+		shared = "Если ПЛОХО_ОБЩ Тогда"
+		post_unica({"at": "main:CommonModule.М", "ops": plan_ops(shared)})
+		bsl_disk.write_text("Чисто\n" + shared + "\n", encoding="utf-8")
+		second.write_text("Чисто\n" + shared + "\n", encoding="utf-8")
+		r = post_unica({"executionToken": "tok-both"})
+		check("неоднозначность: объединение файлов — блок", r.returncode == 2,
+		      f"exit {r.returncode}")
+
+		# завёрнутые args клиента MCP разворачиваются
+		r = post_unica({"args": {"at": "main:CommonModule.М",
+		                         "ops": plan_ops("Если ПЛОХО_W Тогда")}})
+		check("завёрнутые args разворачиваются", plan_file.is_file(), str(plan_file))
 
 		return summary()
 

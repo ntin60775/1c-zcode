@@ -212,3 +212,12 @@ def unica_tools(root: str) -> dict:
 def unica_server_name(root: str) -> str:
 	"""Имя MCP-сервера юники (переопределяется contour.json: unica.server)."""
 	return str(unica_tools(root).get("server") or "unica")
+
+
+def unica_args(tool_input) -> dict:
+	"""Аргументы вызова юники из tool_input. Клиент MCP может заворачивать
+	их вложенно ({"args": {...}}) — здесь разворачивается всегда."""
+	args = tool_input if isinstance(tool_input, dict) else {}
+	if isinstance(args.get("args"), dict):
+		args = args["args"]
+	return args

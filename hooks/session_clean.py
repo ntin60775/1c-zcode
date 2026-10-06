@@ -5,8 +5,9 @@
 session_shutdown), поэтому SessionStart каждой новой сессии выметает:
 
   - просроченные замки инфобаз (state/1c/ib-locks/, TTL истёк);
-  - файлы состояния гейтов старше CLEAN_AFTER_DAYS (doc-gate, retry):
-    забытые флаги сверки и счётчики ретраев мёртвых сессий.
+  - файлы состояния гейтов старше CLEAN_AFTER_DAYS (doc-gate, retry,
+    style-bridge): забытые флаги сверки, счётчики ретраев, планы стайл-бриджа
+    мёртвых сессий.
 
 Хук всегда выходит 0: уборка не должна ронять сессию. События SessionStart
 приходят с source: startup | resume | clear | compact — чистим при любом.
@@ -24,7 +25,7 @@ CLEAN_AFTER_DAYS = 7
 def purge_old_session_state() -> int:
 	removed = 0
 	cutoff = time.time() - CLEAN_AFTER_DAYS * 86400
-	for name in ("doc-gate", "retry"):
+	for name in ("doc-gate", "retry", "style-bridge"):
 		directory = session_state_dir(name)
 		if not directory.is_dir():
 			continue

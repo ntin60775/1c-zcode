@@ -77,6 +77,15 @@
               "${CLAUDE_PLUGIN_ROOT}/hooks/doc_gate.py"
             ],
             "timeoutMs": 5000
+          },
+          {
+            "type": "process",
+            "command": "python3",
+            "args": [
+              "${CLAUDE_PLUGIN_ROOT}/hooks/bsl_style_gate.py"
+            ],
+            "timeoutMs": 45000,
+            "statusMessage": "1c-zcode: стайл-чек BSL"
           }
         ]
       },

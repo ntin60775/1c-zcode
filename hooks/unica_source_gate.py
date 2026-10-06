@@ -48,6 +48,7 @@ from contour_common import (
 	project_root,
 	read_event,
 	session_id,
+	unica_args,
 	unica_verb,
 	unica_tools,
 )
@@ -183,9 +184,7 @@ def unica_call(tool_name: str, tool_input: dict, cwd: str):
 	short = unica_verb(tool_name, project_root(cwd))
 	if not short:
 		return None
-	args = tool_input if isinstance(tool_input, dict) else {}
-	if isinstance(args.get("args"), dict):  # клиент MCP может заворачивать
-		args = args["args"]
+	args = unica_args(tool_input)
 	call_cwd = str(args.get("cwd") or cwd)
 	return short, args, call_cwd
 
