@@ -12,6 +12,9 @@
 # ibsrv: пусто/путь/готовая команда | distrobox:auto (искать в контейнерах) |
 # distrobox:<имя> (только этот контейнер).
 # Сервер слушает только 127.0.0.1; регламентные задания выключены.
+# Грабли молчаливого отказа ibsrv (issue #12) закрыты скриптом: IPC-каталог
+# /tmp/<user>.<uid> предсоздаётся с 700, infobase.id берётся настоящий
+# (DoNotCopy.txt базы), старт с чужими uid в базе громко отказывает.
 set -euo pipefail
 
 CMD="${1:-status}"
@@ -128,6 +131,15 @@ start)
 		exit 0
 	fi
 	[ -d "$BASE" ] || { echo "✗ нет каталога базы: $BASE" >&2; exit 2; }
+	# Чужой uid в каталоге базы = отравленный root-прогоном: ibsrv и клиенты
+	# потом молча не открывают базу («Ошибка открытия файла блокировок»).
+	# Громкий отказ с рецептом лечения, удалением не занимаемся (issue #12).
+	POISON="$(find "$BASE" ! -uid "$(id -u)" -print -quit 2>/dev/null || true)"
+	if [ -n "$POISON" ]; then
+		echo "✗ в базе $BASE есть файлы чужого владельца (root-прогон отравил базу): $POISON" >&2
+		echo "  лечение: find '$BASE' ! -uid $(id -u) -delete — и root-прогонов не делать" >&2
+		exit 2
+	fi
 	mkdir -p "$WORK/data"
 	# Формат публикации HTTP-сервисов автономного сервера: http — список
 	# публикаций, внутри http-services/service (Руководство администратора,
@@ -136,7 +148,7 @@ start)
 	# пусто — базовая публикация без сервисов (заголовок http.base сам по себе
 	# сервисы НЕ публикует — все /hs/* отдавали 404, найдено живой проверкой).
 	python3 - "$WORK/ibases.json" "$PORT" "$BASE" "$ROOT/.zcode/1c/contour.json" <<'PY'
-import json, pathlib, sys, uuid
+import json, pathlib, re, sys, uuid
 out, port, base, cfg_path = sys.argv[1:5]
 services = []
 try:
@@ -144,6 +156,17 @@ try:
     services = pub.get("http_services") or []
 except Exception:
     pass
+# infobase.id — только настоящий UUID базы: случайный оставляет зомби
+# (сервер жив, HTTP не биндит, ошибок нет). Источник — DoNotCopy.txt,
+# его пишет дистрибутив 1С:ERP в каталог базы (issue #12, грабля 2);
+# нет файла — uuid4 (на части баз случайный работал).
+bid = ""
+dnc = pathlib.Path(base) / "DoNotCopy.txt"
+if dnc.exists():
+    m = re.search(
+        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+        dnc.read_text(encoding="utf-8", errors="replace"))
+    bid = m.group(0) if m else ""
 lines = [
     "server:",
     "  address: 127.0.0.1",
@@ -151,7 +174,7 @@ lines = [
     "database:",
     f"  path: {base}",
     "infobase:",
-    f"  id: {uuid.uuid4()}",
+    f"  id: {bid or uuid.uuid4()}",
     "  name: e2e-publish",
     "  distribute-licenses: yes",
     "  schedule-jobs: deny",
@@ -176,6 +199,12 @@ if entries:
 pathlib.Path(out).write_text("\n".join(lines) + "\n", encoding="utf-8")
 PY
 	echo "→ поднимаю публикацию $BASE на :$PORT"
+	# ibsrv сам создаёт IPC-каталог /tmp/<user>.<uid> правами 555 и тут же
+	# не может bind-ить туда сокеты (FATAL channel.hpp:89, Error -13).
+	# Предсоздаём с 700 на каждый старт — после ребута /tmp пуст; chmod
+	# чинит каталог, оставленный неудачным прогоном (issue #12, грабля 1).
+	mkdir -m 700 -p "/tmp/$(id -un).$(id -u)" 2>/dev/null || true
+	chmod 700 "/tmp/$(id -un).$(id -u)" 2>/dev/null || true
 	# shellcheck disable=SC2086
 	eval "$IBSRV_LINE" --data="$WORK/data" --config="$WORK/ibases.json" \
 		>"$WORK/ibsrv.log" 2>&1 &
@@ -185,7 +214,12 @@ PY
 		sleep 2
 		pgrep -f -- "--config=$WORK/ibases.json" >/dev/null || { echo "✗ ibsrv упал, лог: $WORK/ibsrv.log" >&2; tail -3 "$WORK/ibsrv.log" >&2; exit 2; }
 	done
-	[ "$OK" = 1 ] || { echo "✗ публикация не поднялась за 120с, лог: $WORK/ibsrv.log" >&2; exit 2; }
+	# Зомби: процесс жив, порт не слушается, в логе тихо. Типовые причины
+	# по частоте: чужие uid в базе → IPC-каталог не 700 → случайный
+	# infobase.id (issue #12, грабля 4).
+	[ "$OK" = 1 ] || { echo "✗ публикация не поднялась за 120с (зомби?), лог: $WORK/ibsrv.log" >&2
+		echo "  чек-лист: владельцы файлов в $BASE → права /tmp/$(id -un).$(id -u) (нужен 700) → infobase.id в $WORK/ibases.json (настоящий UUID базы?)" >&2
+		exit 2; }
 	echo "✓ публикация жива: http://127.0.0.1:$PORT/"
 	[ -n "$NOTE" ] && echo "WARN: $NOTE" >&2
 	print_json "$(pgrep -f -- "--config=$WORK/ibases.json" | head -1)"
