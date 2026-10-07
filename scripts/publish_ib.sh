@@ -144,9 +144,14 @@ start)
 	# Формат публикации HTTP-сервисов автономного сервера: http — список
 	# публикаций, внутри http-services/service (Руководство администратора,
 	# «Автономный сервер»); адрес сервиса — /hs/{root}/… . Список сервисов —
-	# contour.json (1c.publish.http_services: [{name, root}] или [имя…]);
-	# пусто — базовая публикация без сервисов (заголовок http.base сам по себе
-	# сервисы НЕ публикует — все /hs/* отдавали 404, найдено живой проверкой).
+	# contour.json (1c.publish.http_services: [{name, root, extension}] или
+	# [имя…]; extension → ключ extension-name — сервисы расширений по
+	# умолчанию НЕ публикуются, в отличие от Apache; массовое
+	# publish-extensions-by-default не включаем); пусто — базовая публикация
+	# без сервисов (заголовок http.base сам по себе сервисы НЕ публикует —
+	# все /hs/* отдавали 404, найдено живой проверкой). Коды диагностики:
+	# 401 = опубликован и ждёт Basic, 503 = не опубликован/неизвестный
+	# корень; 404/405 на пути без /hs/ ничего не доказывают.
 	python3 - "$WORK/ibases.json" "$PORT" "$BASE" "$ROOT/.zcode/1c/contour.json" <<'PY'
 import json, pathlib, re, sys, uuid
 out, port, base, cfg_path = sys.argv[1:5]
@@ -187,11 +192,15 @@ entries = []
 for svc in services:
     if isinstance(svc, str):
         svc = {"name": svc}
-    entries.append(
-        f"        - name: {svc['name']}\n"
-        f"          root: {svc.get('root') or svc['name']}\n"
-        "          publish: true"
-    )
+    rows = [f"        - name: {svc['name']}"]
+    ext = svc.get("extension") or svc.get("extension-name") or ""
+    if ext:
+        # Сервис расширения: без extension-name платформа его не видит
+        # (живая проба: /hs/<root>/… до ключа 503, после 401).
+        rows.append(f"          extension-name: {ext}")
+    rows.append(f"          root: {svc.get('root') or svc['name']}")
+    rows.append("          publish: true")
+    entries.append("\n".join(rows))
 if entries:
     lines.append("    http-services:")
     lines.append("      service:")

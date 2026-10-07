@@ -162,6 +162,28 @@ def main():
 			mode.returncode == 0 and mode.stdout.strip() == "700",
 			f"ipc={ipc}, rc={mode.returncode}, mode={mode.stdout.strip()!r}, err={mode.stderr[:100]!r}",
 		)
+
+		# 8. дополнение к #12: сервис расширения публикуется ключом
+		#    extension-name (по умолчанию расширения не публикуются; живая
+		#    проба: /hs/<root>/… до ключа 503, после 401). Строковый сервис —
+		#    как раньше, root от имени.
+		(proj / ".zcode" / "1c" / "contour.json").write_text(
+			'{"1c": {"publish": {"port": %d, "http_services": ['
+			'{"name": "Mob_HTTP", "extension": "ЭР_Доработки", "root": "MobAPI"},'
+			'"PlainSvc"]}}}' % TEST_PORT,
+			encoding="utf-8")
+		r = sh(pub, proj, "start")
+		text = cfg.read_text(encoding="utf-8") if cfg.exists() else ""
+		_lib.check(
+			"extension в http_services → extension-name в ibases.json, строковый сервис без него",
+			"- name: Mob_HTTP" in text
+			and "extension-name: ЭР_Доработки" in text
+			and "root: MobAPI" in text
+			and "- name: PlainSvc" in text
+			and "root: PlainSvc" in text
+			and text.count("publish: true") == 2,
+			f"text={text[-400:]!r}, stderr={r.stderr[:120]!r}",
+		)
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())

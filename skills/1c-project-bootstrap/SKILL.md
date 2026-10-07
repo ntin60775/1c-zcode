@@ -16,8 +16,9 @@ when_to_use: "Проект 1С подключается к контуру (вп�
    (`1c_db.url`, `1c.publish.ibsrv` — по факту машины) создаёт
    `wire_config.py` (шаг 3) сам; руками дозаполняй проектные ключи из
    шаблона `.zcode/1c/templates/contour.json` — профиль testpilot,
-   `http_services` (список HTTP-сервисов публикации: `[{name, root}]` или
-   `[имя…]`; без него публикация отдаёт 404 на все `/hs/*`),
+   `http_services` (список HTTP-сервисов публикации: `[{name, root,
+   extension?}]` или `[имя…]`; `extension` — сервис расширения, без него
+   все `/hs/*` отдают 404),
    `mcp_gate.dangerous`, `style.pack`. Существующие
    значения wire не затирает.
 2. **`.zcode/testpilot/profiles.yaml`** — профили тестовых баз (если нет):
