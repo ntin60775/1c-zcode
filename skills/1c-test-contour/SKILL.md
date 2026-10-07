@@ -96,6 +96,8 @@ API-слой гоняется без GUI: публикация тестовой 
    bash .zcode/1c/scripts/publish_ib.sh start   # печатает E2E_PUBLISH_JSON {url, port, pid}
    bash .zcode/1c/scripts/publish_ib.sh stop
    ```
+   Полная карта публикации (настройки, HTTP-сервисы расширений, грабли,
+   диагностика) — скилл `1c-ibsrv-publish`; здесь — ритуал тест-контура.
    База — `build/ib` (аргументом можно другую); порт — `contour.json →
    1c.publish.port`; сервер слушает только `127.0.0.1`, регламентные задания
    выключены. Резолв ibsrv: env `PUBLISH_IBSRV` → `contour.json 1c.publish.ibsrv`
