@@ -1,0 +1,18 @@
+# Контракт v8-runner/unica (формат — references/tooling/v8project.md плагина
+# unica). Машинные адреса, платформа и креды — в v8project.local.yaml.
+workPath: 'build'
+execution_timeout: 300000
+format: DESIGNER
+infobases:
+  origin:
+    connection: '{ib_connection}'
+source-set:
+  - name: main
+    type: CONFIGURATION
+    path: src/cf
+  # каждое расширение — отдельный source-set:
+  # - name: <ИмяРасширения>
+  #   type: EXTENSION
+  #   path: src/cfe/<ИмяРасширения>
+push:
+  partialLoadThreshold: 20

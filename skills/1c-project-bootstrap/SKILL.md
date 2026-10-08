@@ -76,6 +76,10 @@ when_to_use: "Проект 1С подключается к контуру (вп�
 
 ## Чего НЕ делает bootstrap
 
+- Не создаёт топологию каталогов проекта (src/{cf,cfe,epf,erf}, tests/e2e,
+  каталожные AGENTS.md, `.gitignore`/`.gitattributes`, каркас
+  `v8project.yaml`) — это навык `1c-project-layout`; порядок: сперва layout,
+  затем контурные конфиги здесь.
 - Не ставит Unica (внешний плагин, `unica@unica-next`/`unica` — см.
   `docs/UNICA.md` в репо контура); машинный слой (testpilot, прокси 1c-db,
   xvfb) — см. «Машинный слой» выше, это машина, не проект.

@@ -1,0 +1,16 @@
+# Артефакты сборки: файловая ИБ, дампы, инструменты.
+build/
+
+# MCP-тулкит для 1c-db (копия из клона, не источник).
+tools/mcp/
+
+# Runtime-состояние выгрузки конфигурации (CDFI), не источник.
+src/cf/ConfigDumpInfo.xml
+src/cf/DumpFilesIndex.txt
+src/cf/.build/
+
+# Рабочие файлы unica.
+.build/unica
+
+# Локальный оверлей машины (креды, путь платформы) — никогда в git.
+v8project.local.yaml

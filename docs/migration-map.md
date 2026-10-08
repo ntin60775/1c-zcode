@@ -17,7 +17,7 @@
 | `mcp-gate` | fail-closed контур | `hooks/mcp_gate.py`: новый стек — `1c-testpilot` (`tc_execute_*`) и `1c-db` (execute_code и др.); признак `contour:` в v8project\*.yaml или `.zcode/contour`; REST-toolkit через bash тоже распознаётся |
 | `session_shutdown` отсутствует | — | осознанная замена: TTL + SessionStart (см. выше) |
 | проза правил (свернуто) | навыки + генерируемая секция AGENTS.md | `skills/1c-contour` (инварианты, гейты, приоритеты качества), `templates/agents-section.md` |
-| `1c-project-bootstrap` (навык + скрипты) | навык + скрипты | `skills/1c-project-bootstrap`, `scripts/{wire_config.py,init_worktree.sh}`, `scripts/mcp_fragments.json` |
+| `1c-project-bootstrap` (навык + скрипты) | навык + скрипты | `skills/1c-project-bootstrap`, `scripts/{wire_config.py,init_worktree.sh}`, `scripts/mcp_fragments.json`. Топология каталогов (bootstrap.py + 16 шаблонов AGENTS.md + git-шаблоны) при порте выпала и восстановлена отдельным навыком `skills/1c-project-layout` (дизайн — docs/PROJECT-LAYOUT-SKILL.md) |
 | `unica-test-contour` | НЕ переносится — заменён | новый стек: testpilot/mcp-toolkit (полный переход); взамен — `skills/1c-test-contour` + workflows `1c-e2e-author`/`1c-e2e-run` (write-first: агент пишет тест, readback, ЖР, приёмка-код) |
 | `1c-mcp-server` (MCP_Сервер) | НЕ переносится — заменён | MCP `1c-db` (1c-mcp-toolkit) + `skills/1c-db-data`; прод-гейт расширен на оба новых сервера |
 | стайл-гейт (новое, в omp — TTSR-правило) | `PostToolUse` | `hooks/bsl_style_gate.py`: чекер пака 1c-bsl-code-style по изменённым `.bsl`, advisory-отчёт; приоритет пака над стандартами/диагностикой — в `1c-contour` |

@@ -1,0 +1,17 @@
+# Локальный оверлей машины: в git не попадает.
+# Файловая база на Linux — мутации через ibcmd (headless): пакетный
+# конфигуратор падает по GTK в Wayland-сессии (разовый обход:
+# env -u WAYLAND_DISPLAY GDK_BACKEND=x11). Ключ builder не используется
+# (0.13: per-operation providers).
+providers:
+  push: ibcmd
+  extensions: ibcmd
+tools:
+  platform:
+    path: '/opt/1cv8/x86_64/<версия>'   # каталог установки, БЕЗ strict-пина:
+                                        # строгая проверка версии ломается
+                                        # на установке без версии в пути
+# infobases:
+#   origin:
+#     user: <пользователь ИБ>          # пароль — не в git, не в чат
+# contour: test   # тест-дерево; прод по умолчанию (fail-closed), см. навык 1c-contour

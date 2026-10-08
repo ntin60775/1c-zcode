@@ -27,6 +27,10 @@
       "to": ".zcode/skills/1c-project-bootstrap"
     },
     {
+      "from": "skills/1c-project-layout",
+      "to": ".zcode/skills/1c-project-layout"
+    },
+    {
       "from": "hooks",
       "to": ".zcode/hooks"
     },
