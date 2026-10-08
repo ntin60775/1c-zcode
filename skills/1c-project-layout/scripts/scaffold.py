@@ -2,16 +2,18 @@
 """1C Project Layout — scaffold топологии каталогов 1С-проекта контура.
 
 Субкоманды:
-  structure   — каталоги src/{cf,cfe,epf,erf} + компоненты (tests/e2e,
-                tools/mcp, docs), каталожные AGENTS.md, корневой AGENTS.md
-                с таблицей структуры, пустой packagedef (маркер
-                1C Platform Tools в VS Code)
+  structure   — обязательная топология (src/{cf,cfe,epf,erf}, tests/e2e,
+                tools, vendor) + компоненты (tools/mcp, docs), каталожные
+                AGENTS.md, корневой AGENTS.md с таблицей структуры, пустой
+                packagedef (маркер 1C Platform Tools в VS Code)
   v8project   — каркас v8project.yaml + шаблон v8project.local.yaml
   git         — git init + .gitignore (только дозапись недостающих строк)
                 + .gitattributes + remote origin
-  check       — обязательный минимум топологии: exit 0 выполнен,
-                exit 1 нет (машиночитаемые строки ok/miss) — детектор,
-                по которому навык срабатывает ПОЛНЫМ ритуалом
+  check       — обязательный минимум топологии (состав = REQUIRED_MINIMUM):
+                exit 0 выполнен, exit 1 нет (машиночитаемые строки ok/miss)
+                — детектор, по которому навык срабатывает ПОЛНЫМ ритуалом;
+                юнит-наследие omp-эпохи (tests/cfe|tests/epf вместо
+                tests/e2e) опознаётся отдельной подсказкой про мигратор
   all         — structure + v8project + git одним вызовом
 
 Идемпотентность: существующие файлы не перезаписываются без --force.
@@ -41,28 +43,41 @@ KIND_DIRS = {
 	"erf": "src/erf",
 }
 
-# Компоненты сверх исходников (--components); дефолт — только тесты.
+# Компоненты сверх обязательной топологии (--components); дефолт — нет.
 COMPONENT_DIRS = {
-	"tests-e2e": "tests/e2e",
 	"tools-mcp": "tools/mcp",
 	"docs": "docs",
 }
 DEFAULT_KINDS = "cf,cfe,epf,erf"
-DEFAULT_COMPONENTS = "tests-e2e"
+DEFAULT_COMPONENTS = ""
 
 # Обязательный минимум топологии: без него каталог — не проект контура.
 # Отсутствие чего-либо из списка = триггер ПОЛНОГО ритуала навыка (все
-# вопросы оператору), не молчаливого дооснащения дефолтами. Единственный
-# источник этого списка — здесь; doctor зовёт check процессом и
-# ретранслирует, не дублируя.
+# вопросы оператору), не молчаливого дооснащения дефолтами. Состав утверждён
+# владельцем по эмпирике живых проектов (dealer-network-orders, erp-mini):
+# все kinds, tests/e2e, tools/ (служебные скрипты проекта), vendor/.
+# Единственный источник этого списка — здесь; doctor зовёт check процессом
+# и ретранслирует, не дублируя.
 REQUIRED_MINIMUM = [
     ("src/cf", "dir", "исходники конфигурации (source-set main)"),
+    ("src/cfe", "dir", "исходники расширений (по подкаталогу на расширение)"),
+    ("src/epf", "dir", "исходники внешних обработок"),
+    ("src/erf", "dir", "исходники внешних отчётов"),
+    ("tests/e2e", "dir", "e2e-тесты контура (pytest): логика, API, GUI"),
+    ("tools", "dir", "служебные скрипты и конфигурации проекта"),
+    ("vendor", "dir", "вендоренный внешний код (паки, тулкиты)"),
     ("v8project.yaml", "file", "контракт юники"),
     (".gitignore", "file", "git-гигиена (строки шаблона — субкоманда git)"),
     (".gitattributes", "file", "EOL/бинарные — repositoryReady первого коммита"),
-    ("packagedef", "file", "пустой маркер 1C Platform Tools в VS Code"),
+    ("packagedef", "file", "маркер 1C Platform Tools в VS Code (новым — пустой; "
+                           "существующий не трогать: бывает живым "
+                           "OneScript-дескриптором)"),
     ("AGENTS.md", "file", "входная точка агентов"),
 ]
+
+# Каталоги обязательной топологии (не kinds, не компоненты): создаются
+# structure всегда.
+ALWAYS_DIRS = ["tests/e2e", "tools", "vendor"]
 
 # Шаблон каталожного AGENTS.md для каждого каталога ("" — корень проекта).
 AGENTS_FOR_DIR = {
@@ -73,11 +88,15 @@ AGENTS_FOR_DIR = {
 	"src/epf": "src_epf",
 	"src/erf": "src_erf",
 	"tests/e2e": "tests_e2e",
+	"tools": "tools",
 	"tools/mcp": "tools_mcp",
+	"vendor": "vendor",
 	"docs": "docs",
 }
 
 # Строки таблицы структуры корневого AGENTS.md: каталог -> (условие, назначение).
+# Условие "always" — обязательная топология, kind — по --kinds,
+# иначе имя компонента из --components.
 TABLE_ROWS = [
 	("src/cf", "cf",
 	 "исходники конфигурации (XML-выгрузка, source-set `main`)"),
@@ -87,8 +106,12 @@ TABLE_ROWS = [
 	 "исходники внешних обработок; имя подкаталога = имя обработки"),
 	("src/erf", "erf",
 	 "исходники внешних отчётов; имя подкаталога = имя отчёта"),
-	("tests/e2e", "tests-e2e",
+	("tests/e2e", "always",
 	 "e2e-тесты контура (pytest): логика, API, GUI"),
+	("tools", "always",
+	 "служебные скрипты и конфигурации проекта (не вендоренная поставка контура)"),
+	("vendor", "always",
+	 "вендоренный внешний код (паки, тулкиты); источник и лицензия фиксируются"),
 	("tools/mcp", "tools-mcp",
 	 "`MCP_Toolkit.epf` для 1c-db (копия, в git не попадает)"),
 	("docs", "docs",
@@ -161,7 +184,7 @@ def structure_table(kinds: list[str], components: list[str]) -> str:
 	entries = [
 		(f"`{rel}/`", purpose)
 		for rel, flag, purpose in TABLE_ROWS
-		if flag in kinds or flag in components
+		if flag == "always" or flag in kinds or flag in components
 	]
 	entries.append((
 		"`build/`",
@@ -212,6 +235,7 @@ def cmd_structure(args: argparse.Namespace) -> int:
 	if kinds:
 		dirs.append("src")
 		dirs.extend(KIND_DIRS[k] for k in kinds if k in KIND_DIRS)
+	dirs.extend(ALWAYS_DIRS)
 	dirs.extend(COMPONENT_DIRS[c] for c in components if c in COMPONENT_DIRS)
 	known = set(AGENTS_FOR_DIR) - {""}
 	unknown = [d for d in dirs if d not in known]
@@ -316,10 +340,22 @@ def cmd_check(args: argparse.Namespace) -> int:
             log(f"miss\t{rel}\t{why}")
             missing.append(rel)
     if missing:
-        log("минимум топологии не выполнен — зови навык 1c-project-layout "
-            "ПОЛНЫМ ритуалом (все вопросы оператору: имя, kinds, components, "
-            "remote, ib-connection; dry-run → план → запуск), "
-            "не молчаливым дооснащением дефолтами")
+        # Юнит-стек omp-эпохи вместо tests/e2e — другая болезнь и другое
+        # лечение: мигратор + демонтаж, не полный ритуал layout.
+        legacy = [d for d in ("tests/cfe", "tests/epf")
+                  if os.path.isdir(os.path.join(TARGET_DIR, d))]
+        if legacy:
+            log(f"наследие: найден юнит-стек omp-эпохи ({', '.join(legacy)}) — "
+                "tests/e2e лечится переносом покрытия и демонтажём "
+                "(scripts/migrate_from_omp.py, см. MIGRATION-FROM-OMP.md), "
+                "не полным ритуалом layout")
+        if legacy and missing == ["tests/e2e"]:
+            log("минимум топологии не выполнен — путь лечения выше (мигратор)")
+        else:
+            log("минимум топологии не выполнен — зови навык 1c-project-layout "
+                "ПОЛНЫМ ритуалом (все вопросы оператору: имя, kinds, components, "
+                "remote, ib-connection; dry-run → план → запуск), "
+                "не молчаливым дооснащением дефолтами")
         return 1
     log("минимум топологии выполнен")
     return 0

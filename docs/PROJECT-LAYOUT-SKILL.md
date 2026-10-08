@@ -62,10 +62,12 @@ ZCode перенесены только контурные конфиги (`wire
 | Каталог | Назначение | Обязательность |
 |---|---|---|
 | `src/cf/` | исходники конфигурации (XML-выгрузка, source-set `main`) | да |
-| `src/cfe/` | XML-выгрузки расширений, подкаталог на расширение | `--kinds` |
-| `src/epf/` | XML-выгрузки внешних обработок, подкаталог = имя обработки | `--kinds` |
-| `src/erf/` | XML-выгрузки внешних отчётов, подкаталог = имя отчёта | `--kinds` |
-| `tests/e2e/` | pytest e2e: логика (1c-db), API (HTTP), GUI (testpilot) | компонент, дефолт вкл. |
+| `src/cfe/` | XML-выгрузки расширений, подкаталог на расширение | да |
+| `src/epf/` | XML-выгрузки внешних обработок, подкаталог = имя обработки | да |
+| `src/erf/` | XML-выгрузки внешних отчётов, подкаталог = имя отчёта | да |
+| `tests/e2e/` | pytest e2e: логика (1c-db), API (HTTP), GUI (testpilot) | да |
+| `tools/` | служебные скрипты и конфигурации проекта | да |
+| `vendor/` | вендоренный внешний код (паки, тулкиты) | да |
 | `tools/mcp/` | `MCP_Toolkit.epf` для 1c-db (копия, вне git) | компонент |
 | `docs/` | документация проекта | компонент |
 | `build/` | артефакты: файловая ИБ `build/ib`, дампы `*.dt`, `build/tools/` (вне git, только gitignore-строка — каталог не создаём) | да (строка) |
@@ -92,12 +94,19 @@ ZCode перенесены только контурные конфиги (`wire
 source-set, три уровня тестов.
 
 Обязательный минимум топологии (регламентирует навык, детектор —
-`scaffold check`): `src/cf/`, `v8project.yaml`, `.gitignore`,
-`.gitattributes`, `packagedef`, корневой `AGENTS.md`. Остальное
-(cfe/epf/erf, components) — по вопросам ритуала, не молчаливыми дефолтами.
-Единственная правда о составе — `REQUIRED_MINIMUM` в `scaffold.py`; doctor
-зовёт `check` процессом и ретранслирует (FAIL «обязательная топология
-неполна» с советом полного ритуала), список не дублируется.
+`scaffold check`): `src/{cf,cfe,epf,erf}`, `tests/e2e`, `tools`, `vendor`,
+`v8project.yaml`, `.gitignore`, `.gitattributes`, `packagedef`, корневой
+`AGENTS.md`. Состав утверждён владельцем по эмпирике живых проектов
+(dealer-network-orders, erp-mini). Компоненты сверх минимума — `tools/mcp`
+и `docs` — по вопросам ритуала, не молчаливыми дефолтами. Юнит-наследие
+omp-эпохи (`tests/cfe`/`tests/epf` вместо `tests/e2e`) `check` опознаёт
+отдельной подсказкой: лечение — `migrate_from_omp.py` + демонтаж, не
+ритуал layout. Единственная правда о составе — `REQUIRED_MINIMUM` в
+`scaffold.py`; doctor зовёт `check` процессом и ретранслирует (FAIL
+«обязательная топология неполна» с советом полного ритуала), список не
+дублируется. `tools/` — ответ на «где служебные узкие скрипты проекта»
+(вендоренная поставка контура — `.zcode/1c/scripts`, не путать);
+`vendor/` — вендоренный внешний код с фиксацией источника и лицензии.
 
 ## 5. Скрипт `scripts/scaffold.py`
 
@@ -109,7 +118,7 @@ source-set, три уровня тестов.
 ```
 scaffold.py structure --dir <проект> --name <slug>
     [--kinds cf,cfe,epf,erf]        # дефолт: все четыре
-    [--components tests-e2e,tools-mcp,docs]   # дефолт: tests-e2e
+    [--components tools-mcp,docs]   # сверх обязательной топологии; дефолт: нет
     [--dry-run] [--force]
 scaffold.py v8project --dir <проект> [--ib-connection 'File=build/ib']
     [--dry-run] [--force]

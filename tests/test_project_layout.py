@@ -34,12 +34,14 @@ def main() -> None:
 		p1 = os.path.join(tmp, "full")
 		r = sh("structure", "--dir", p1, "--name", "proj")
 		_lib.check("structure exit 0", r.returncode == 0, r.stderr[:200])
-		for rel in ("src/cf", "src/cfe", "src/epf", "src/erf", "tests/e2e"):
+		for rel in ("src/cf", "src/cfe", "src/epf", "src/erf", "tests/e2e",
+		            "tools", "vendor"):
 			_lib.check(f"каталог {rel} создан", os.path.isdir(os.path.join(p1, rel)))
 		for rel in ("tools/mcp", "docs"):
 			_lib.check(f"без компонента {rel} каталога нет",
 			           not os.path.exists(os.path.join(p1, rel)))
-		for rel in ("src", "src/cf", "src/cfe", "src/epf", "src/erf", "tests/e2e"):
+		for rel in ("src", "src/cf", "src/cfe", "src/epf", "src/erf",
+		            "tests/e2e", "tools", "vendor"):
 			_lib.check(f"AGENTS.md в {rel}",
 			           os.path.isfile(os.path.join(p1, rel, "AGENTS.md")))
 		root = Path(p1) / "AGENTS.md"
@@ -48,6 +50,8 @@ def main() -> None:
 		           "# proj" in root_text, root_text[:80])
 		_lib.check("таблица: src/cf и build есть",
 		           "| `src/cf/` |" in root_text and "| `build/` |" in root_text)
+		_lib.check("таблица: tools/ и vendor/ в обязательной части",
+		           "`tools/`" in root_text and "`vendor/`" in root_text)
 		_lib.check("таблица: tools/mcp и docs отсутствуют",
 		           "tools/mcp" not in root_text and "`docs/`" not in root_text)
 		pd = Path(p1) / "packagedef"
@@ -73,12 +77,15 @@ def main() -> None:
 		# ── 3. kinds подмножеством; компоненты всеми ──
 		p2 = os.path.join(tmp, "kinds")
 		sh("structure", "--dir", p2, "--kinds", "cf", "--components",
-		   "tests-e2e,tools-mcp,docs")
+		   "tools-mcp,docs")
 		_lib.check("kinds=cf: src/cf есть", os.path.isdir(os.path.join(p2, "src/cf")))
 		_lib.check("kinds=cf: src/cfe нет", not os.path.exists(os.path.join(p2, "src/cfe")))
-		_lib.check("components все: tools/mcp и docs с AGENTS.md",
+		_lib.check("компоненты все: tools/mcp и docs с AGENTS.md",
 		           os.path.isfile(os.path.join(p2, "tools/mcp/AGENTS.md"))
 		           and os.path.isfile(os.path.join(p2, "docs/AGENTS.md")))
+		_lib.check("устаревший компонент tests-e2e — громкий отказ",
+		           sh("structure", "--dir", os.path.join(tmp, "x1"),
+		              "--components", "tests-e2e").returncode == 2)
 		t2 = (Path(p2) / "AGENTS.md").read_text(encoding="utf-8")
 		_lib.check("таблица kinds=cf без src/cfe", "src/cfe" not in t2)
 
@@ -161,7 +168,7 @@ def main() -> None:
 
 		# ── 10. all: всё одним вызовом ──
 		p8 = os.path.join(tmp, "allp")
-		r = sh("all", "--dir", p8, "--name", "allproj", "--kinds", "cf")
+		r = sh("all", "--dir", p8, "--name", "allproj")
 		_lib.check("all exit 0", r.returncode == 0, r.stderr[:300])
 		_lib.check("all: структура + v8project + git вместе",
 		           os.path.isfile(os.path.join(p8, "src/cf/AGENTS.md"))
@@ -177,13 +184,18 @@ def main() -> None:
 		_lib.check("check: пустой каталог → exit 1", r.returncode == 1,
 		           str(r.returncode))
 		_lib.check("check: miss-строки машиночитаемы",
-		           "miss\tv8project.yaml" in r.stdout and "miss\tpackagedef" in r.stdout,
-		           r.stdout[:300])
+		           "miss\tv8project.yaml" in r.stdout and "miss\tpackagedef" in r.stdout
+		           and "miss\ttests/e2e" in r.stdout and "miss\tvendor" in r.stdout,
+		           r.stdout[:400])
 		_lib.check("check: итог зовёт полный ритуал, не дефолты",
 		           "ПОЛНЫМ ритуалом" in r.stdout, r.stdout[-300:])
+		_lib.check("check: без юнит-наследия подсказки про мигратор нет",
+		           "migrate_from_omp" not in r.stdout, r.stdout[:400])
 		r = sh("check", "--dir", p8)
-		_lib.check("check: после all → exit 0", r.returncode == 0,
-		           r.stdout[:300])
+		_lib.check("check: после all → exit 0 (все kinds, tests/e2e, tools, vendor)",
+		           r.returncode == 0 and "ok\tsrc/cfe" in r.stdout
+		           and "ok\ttests/e2e" in r.stdout and "ok\tvendor" in r.stdout,
+		           r.stdout[:400])
 		(Path(p9) / "v8project.yaml").write_text("# заглушка\n", encoding="utf-8")
 		r = sh("check", "--dir", p9)
 		missed_ok = (r.returncode == 1
@@ -191,6 +203,30 @@ def main() -> None:
 		             and "miss\tsrc/cf" in r.stdout)
 		_lib.check("check: частичный — ругается только на недостающее",
 		           missed_ok, r.stdout[:300])
+		# юнит-наследие omp-эпохи: miss tests/e2e при tests/cfe|epf
+		os.makedirs(os.path.join(p9, "tests/cfe"))
+		r = sh("check", "--dir", p9)
+		_lib.check("check: юнит-наследие опознано подсказкой про мигратор",
+		           "migrate_from_omp" in r.stdout and "tests/cfe" in r.stdout,
+		           r.stdout[:500])
+		# чистое наследие (miss только tests/e2e) — финал ведёт в мигратор,
+		# не в полный ритуал; смешанный случай — ритуал остаётся
+		p10 = os.path.join(tmp, "legacy")
+		for rel in ("src/cf", "src/cfe", "src/epf", "src/erf", "tests/cfe",
+		            "tests/epf", "tools", "vendor"):
+			os.makedirs(os.path.join(p10, rel), exist_ok=True)
+		for rel in ("v8project.yaml", ".gitignore", ".gitattributes",
+		            "packagedef", "AGENTS.md"):
+			open(os.path.join(p10, rel), "w").close()
+		r = sh("check", "--dir", p10)
+		_lib.check("check: чистое наследие — финал про мигратор",
+		           r.returncode == 1 and "путь лечения выше (мигратор)" in r.stdout
+		           and "ПОЛНЫМ ритуалом" not in r.stdout, r.stdout[-300:])
+		os.rmdir(os.path.join(p10, "vendor"))
+		r = sh("check", "--dir", p10)
+		_lib.check("check: наследие + ещё miss — полный ритуал возвращается",
+		           r.returncode == 1 and "ПОЛНЫМ ритуалом" in r.stdout,
+		           r.stdout[-300:])
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())

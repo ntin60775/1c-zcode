@@ -95,14 +95,16 @@ def main() -> int:
 		r = run_doctor(root)
 		check("неполный минимум — FAIL с перечнем",
 		      "обязательная топология неполна" in r.stdout
-		      and "packagedef" in r.stdout, r.stdout[:600])
+		      and "packagedef" in r.stdout and "vendor" in r.stdout,
+		      r.stdout[:600])
 		check("FAIL ведёт в навык и полный ритуал",
 		      "1c-project-layout" in r.stdout and "ПОЛНЫЙ ритуал" in r.stdout,
 		      r.stdout[:600])
-		for rel in ("src/cf", "packagedef", "AGENTS.md", ".gitignore",
-		            ".gitattributes"):
-			(root / rel).mkdir(parents=True, exist_ok=True) if rel == "src/cf" \
-				else (root / rel).write_text("", encoding="utf-8")
+		for rel in ("src/cf", "src/cfe", "src/epf", "src/erf", "tests/e2e",
+		            "tools", "vendor"):
+			(root / rel).mkdir(parents=True, exist_ok=True)
+		for rel in ("packagedef", "AGENTS.md", ".gitignore", ".gitattributes"):
+			(root / rel).write_text("", encoding="utf-8")
 		r = run_doctor(root)
 		check("полный минимум — OK-строка",
 		      "минимум топологии выполнен" in r.stdout, r.stdout[:600])
