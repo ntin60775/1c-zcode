@@ -21,7 +21,7 @@ when_to_use: "Любая работа в проекте 1С с Unica: чтени
 | `unica.docs` | чтение | документация: platform-help / development-standard / configuration-documentation |
 | `unica.apply` | **план → запись** | ВСЕ правки: свойства, реквизиты, формы, BSL-код, роли, СКД, макеты, подсистемы, XDTO, поддержка поставщика |
 | `unica.check` | чтение | валидация узла после правки (валидатор по виду: cf/cfe/form/dcs/mxl/role/…) |
-| `unica.run {op, args, dryRun}` | действие | сборка/ИБ: `push` (force, full), `upload`, `apply`, `reset`, `make`, `launch`, `infobase.*`. Аргументы операции — ВЛОЖЕННО в `args` (плоская форма отвергается); `dryRun: true\|false` обязателен явно; платформенные операции — async: ответ = задача, результат через `unica.task.result` (waitMs ≤ 7000) |
+| `unica.run {op, args, dryRun}` | действие | сборка/ИБ: `push` (force, full), `upload`, `apply`, `reset`, `make`, `launch`, `infobase.*`. Аргументы операции — ВЛОЖЕННО в `args` (плоская форма отвергается); `dryRun: true\|false` обязателен явно; платформенные операции — async: ответ = задача, результат через `unica.task.result` (waitMs ≤ 7000). rc.7: tools/call зовётся именем с префиксом (`unica.run`); словарь ops на пустой `run` больше не отдаётся |
 | `unica.task.*` | — | durable-задачи: get/result/cancel (долгие вызовы) |
 
 Канон правки (сценарий S159): `search → view → apply (план) → apply (запись) →
@@ -43,7 +43,9 @@ view/check/diff (перепроверка)`. План `apply` не меняет 
    решение снова требует сверки; серия правок кода (`apply` с ops `code.*`)
    флаг не сбрасывает.
 3. **Инварианты пересборки — правила ПРОЕКТА, не контура** (0.13: `push
-   {force, full}` вместо 0.12-`fullRebuild`, semantics изменилась). Гейт
+   {force, full}` вместо 0.12-`fullRebuild`; rc.7: canonical-имя снова
+   `fullRebuild`, но алиас `full` принимается — подтверждено живой пробой
+   2026-10-08, контурные правила с `full` работают). Гейт
    применяет `unica.rebuild_rules` из `.zcode/1c/contour.json`; пока правила
    не включены сверкой на живом стенде — гейт нейтрален. Селекторы
    `source_sets`: `"main"` / `"extensions"` (EXTENSION-наборы v8project.yaml)
@@ -70,8 +72,11 @@ view/check/diff (перепроверка)`. План `apply` не меняет 
 
 - Ключ `builder` отвергается схемой: исполнитель — per-operation
   `providers` (`designer` / `agent` / `ibcmd`), по умолчанию его выбирает
-  раннер (v8-runner 0.11.2). Практика наших проектов: файловая база — ibcmd,
-  серверная — дизайнер; переопределяется в `providers`.
+  раннер (v8-runner 0.14 в unica rc.7+). Практика наших проектов: файловая
+  база — ibcmd, серверная — дизайнер; переопределяется в `providers`.
+- Ключи `execution_timeout` и `push.partialLoadThreshold` отвергаются
+  v8-runner 0.14 (общего дедлайна и порога partial-load больше нет —
+  push без `full: true` частичный и так).
 - `infobase.connection` → `infobases.origin.connection` (legacy-ключ
   читается на миграции; `v8project.local.yaml` перекрывает, включая
   `providers`).

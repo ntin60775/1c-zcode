@@ -187,6 +187,8 @@ UNICA_TOOLS_DEFAULT = {
 	],
 	# правила инвариантов пересборки; по умолчанию ПУСТО — semantics push/full
 	# в 0.13 отличается от fullRebuild 0.12, до сверки на стенде гейт нейтрален.
+	# rc.7 (v8-runner 0.14): canonical-имя параметра полной загрузки — fullRebuild,
+	# алиас "full" принимается (живая проба 2026-10-08) — правила с "full" работают.
 	# Пример правила (включается в contour.json проекта):
 	#   {"tool": "run", "op": "push", "source_sets": "extensions",
 	#    "require": {"full": true},

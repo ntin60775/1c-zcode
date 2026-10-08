@@ -150,11 +150,12 @@ scaffold.py all …    # structure + v8project + git
 
 ## 6. Каркасы (содержание шаблонов)
 
-`v8project.yaml` — проверенный живой деплоем каркас 0.13:
+`v8project.yaml` — проверенный живым деплоем каркас (v8-runner 0.14 /
+unica rc.7+: `execution_timeout` и `push.partialLoadThreshold` отвергаются
+как invalid_source — не ставить):
 
 ```yaml
 workPath: 'build'
-execution_timeout: 300000
 format: DESIGNER
 infobases:
   origin:
@@ -167,8 +168,6 @@ source-set:
   # - name: <ИмяРасширения>
   #   type: EXTENSION
   #   path: src/cfe/<ИмяРасширения>
-push:
-  partialLoadThreshold: 20
 ```
 
 `v8project.local.yaml` — шаблон несёт знания, открытые эмпирически:
@@ -241,7 +240,8 @@ tests/e2e) дословно; для `src/cf`, `tools/mcp`, `docs` — по то�
 1. Объявляются ли `epf`/`erf` в `v8project.yaml` 0.13 отдельными типами
    source-set (или живут вне source-set'ов)? Сверить по словарю `unica.run`
    и докам юники; до решения — не объявлять, правки через `unica.apply`.
-2. `execution_timeout`/`partialLoadThreshold` — значения из живого деплоя
-   (300000/20); сверить с донорским опытом перед фиксацией в шаблоне.
-3. Точка роста (не блокирует): проверка топологии в `doctor.py` — наличие
-   каталожных AGENTS.md и `.gitattributes` как warn, не fail.
+2. ~~`execution_timeout`/`partialLoadThreshold`~~ — снято 2026-10-08:
+   v8-runner 0.14 (unica rc.7) отвергает оба ключа как invalid_source;
+   из шаблона и живых проектов убраны.
+3. ~~Точка роста: проверка топологии в `doctor.py`~~ — сделано в v0.4.39
+   (блок 3b: зовёт `scaffold check`, неполный минимум = FAIL).
