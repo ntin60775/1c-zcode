@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """scaffold.py навыка 1c-project-layout: топология каталогов, каталожные
-AGENTS.md, каркас v8project.yaml, git-шаблоны. Проверяется как процесс во
-временном каталоге — ровно как зовёт агент. Инварианты: идемпотентность
-(повтор — всё skip), --dry-run ничего не создаёт, --force перезаписывает,
-.gitignore только дозаписывает недостающее, корневой AGENTS.md не
-перезаписывается (таблица — в stdout)."""
+AGENTS.md, каркас v8project.yaml, git-шаблоны, check минимума топологии.
+Проверяется как процесс во временном каталоге — ровно как зовёт агент.
+Инварианты: идемпотентность (повтор — всё skip), --dry-run ничего не
+создаёт, --force перезаписывает, .gitignore только дозаписывает недостающее,
+корневой AGENTS.md не перезаписывается (таблица — в stdout), check —
+exit 0/1 с машиночитаемыми miss-строками."""
 import os
 import shutil
 import subprocess
@@ -168,6 +169,28 @@ def main() -> None:
 		           and os.path.isfile(os.path.join(p8, ".gitignore")))
 		_lib.check("all: packagedef в корне",
 		           os.path.isfile(os.path.join(p8, "packagedef")))
+
+		# ── 11. check: детектор обязательного минимума ──
+		p9 = os.path.join(tmp, "bare")
+		os.makedirs(p9)
+		r = sh("check", "--dir", p9)
+		_lib.check("check: пустой каталог → exit 1", r.returncode == 1,
+		           str(r.returncode))
+		_lib.check("check: miss-строки машиночитаемы",
+		           "miss\tv8project.yaml" in r.stdout and "miss\tpackagedef" in r.stdout,
+		           r.stdout[:300])
+		_lib.check("check: итог зовёт полный ритуал, не дефолты",
+		           "ПОЛНЫМ ритуалом" in r.stdout, r.stdout[-300:])
+		r = sh("check", "--dir", p8)
+		_lib.check("check: после all → exit 0", r.returncode == 0,
+		           r.stdout[:300])
+		(Path(p9) / "v8project.yaml").write_text("# заглушка\n", encoding="utf-8")
+		r = sh("check", "--dir", p9)
+		missed_ok = (r.returncode == 1
+		             and "miss\tv8project.yaml" not in r.stdout
+		             and "miss\tsrc/cf" in r.stdout)
+		_lib.check("check: частичный — ругается только на недостающее",
+		           missed_ok, r.stdout[:300])
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())

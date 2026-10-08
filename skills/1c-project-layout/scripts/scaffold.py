@@ -9,7 +9,10 @@
   v8project   — каркас v8project.yaml + шаблон v8project.local.yaml
   git         — git init + .gitignore (только дозапись недостающих строк)
                 + .gitattributes + remote origin
-  all         — всё вышеперечисленное одним вызовом
+  check       — обязательный минимум топологии: exit 0 выполнен,
+                exit 1 нет (машиночитаемые строки ok/miss) — детектор,
+                по которому навык срабатывает ПОЛНЫМ ритуалом
+  all         — structure + v8project + git одним вызовом
 
 Идемпотентность: существующие файлы не перезаписываются без --force.
 Исключение — .gitignore: только дозапись недостающих строк, --force на
@@ -46,6 +49,20 @@ COMPONENT_DIRS = {
 }
 DEFAULT_KINDS = "cf,cfe,epf,erf"
 DEFAULT_COMPONENTS = "tests-e2e"
+
+# Обязательный минимум топологии: без него каталог — не проект контура.
+# Отсутствие чего-либо из списка = триггер ПОЛНОГО ритуала навыка (все
+# вопросы оператору), не молчаливого дооснащения дефолтами. Единственный
+# источник этого списка — здесь; doctor зовёт check процессом и
+# ретранслирует, не дублируя.
+REQUIRED_MINIMUM = [
+    ("src/cf", "dir", "исходники конфигурации (source-set main)"),
+    ("v8project.yaml", "file", "контракт юники"),
+    (".gitignore", "file", "git-гигиена (строки шаблона — субкоманда git)"),
+    (".gitattributes", "file", "EOL/бинарные — repositoryReady первого коммита"),
+    ("packagedef", "file", "пустой маркер 1C Platform Tools в VS Code"),
+    ("AGENTS.md", "file", "входная точка агентов"),
+]
 
 # Шаблон каталожного AGENTS.md для каждого каталога ("" — корень проекта).
 AGENTS_FOR_DIR = {
@@ -287,6 +304,27 @@ def cmd_git(args: argparse.Namespace) -> int:
 	return 0
 
 
+def cmd_check(args: argparse.Namespace) -> int:
+    """Детектор минимума: ok/miss строки для doctor и агента, exit 0/1."""
+    missing = []
+    for rel, kind, why in REQUIRED_MINIMUM:
+        dst = os.path.join(TARGET_DIR, rel)
+        present = os.path.isdir(dst) if kind == "dir" else os.path.isfile(dst)
+        if present:
+            log(f"ok\t{rel}")
+        else:
+            log(f"miss\t{rel}\t{why}")
+            missing.append(rel)
+    if missing:
+        log("минимум топологии не выполнен — зови навык 1c-project-layout "
+            "ПОЛНЫМ ритуалом (все вопросы оператору: имя, kinds, components, "
+            "remote, ib-connection; dry-run → план → запуск), "
+            "не молчаливым дооснащением дефолтами")
+        return 1
+    log("минимум топологии выполнен")
+    return 0
+
+
 def cmd_all(args: argparse.Namespace) -> int:
 	for cmd in (cmd_structure, cmd_v8project, cmd_git):
 		print(f"== {cmd.__name__[4:]} ==")
@@ -341,6 +379,11 @@ def main(argv: list[str] | None = None) -> int:
 		parents=[common])
 	p_git.add_argument("--remote", help="URL remote origin (опционально)")
 	p_git.set_defaults(func=cmd_git)
+
+	p_check = sub.add_parser(
+		"check", help="обязательный минимум топологии (exit 0/1)",
+		parents=[common])
+	p_check.set_defaults(func=cmd_check)
 
 	p_all = sub.add_parser(
 		"all", help="structure + v8project + git", parents=[common])

@@ -91,6 +91,14 @@ ZCode перенесены только контурные конфиги (`wire
 не из донора: `unica.apply` вместо «не редактируй XML руками», EXTENSION
 source-set, три уровня тестов.
 
+Обязательный минимум топологии (регламентирует навык, детектор —
+`scaffold check`): `src/cf/`, `v8project.yaml`, `.gitignore`,
+`.gitattributes`, `packagedef`, корневой `AGENTS.md`. Остальное
+(cfe/epf/erf, components) — по вопросам ритуала, не молчаливыми дефолтами.
+Единственная правда о составе — `REQUIRED_MINIMUM` в `scaffold.py`; doctor
+зовёт `check` процессом и ретранслирует (FAIL «обязательная топология
+неполна» с советом полного ритуала), список не дублируется.
+
 ## 5. Скрипт `scripts/scaffold.py`
 
 Порт донорского `bootstrap.py` (stdlib-only, сабкоманды, идемпотентность,
@@ -107,6 +115,7 @@ scaffold.py v8project --dir <проект> [--ib-connection 'File=build/ib']
     [--dry-run] [--force]
 scaffold.py git --dir <проект> [--remote git@host:owner/repo.git]
     [--dry-run] [--force]
+scaffold.py check --dir <проект>     # минимум топологии, exit 0/1
 scaffold.py all …    # structure + v8project + git
 ```
 

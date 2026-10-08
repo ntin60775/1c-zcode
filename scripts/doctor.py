@@ -9,6 +9,9 @@
   3. Проектные файлы контура: v8project.yaml (платформа — local-оверлей,
      v8project.yaml, 1c.platform.path из contour.json), .zcode/config.json
      (разводка через wire_config --check), .zcode/1c/contour.json, profiles.yaml.
+  3b. Обязательный минимум топологии — зовёт `scaffold check` скилла
+     1c-project-layout (единственная правда о минимуме — там); неполный
+     минимум = FAIL с указанием полного ритуала навыка.
   4. Стайл-чекер резолвится (env → PATH → вендоренный пак).
   5. Скилл bsp (БСП-пак) вендорен.
   6. Shadow-дубли контурных скиллов на пользовательском уровне.
@@ -271,6 +274,35 @@ def main() -> int:
 			     + "; ".join(found))
 	else:
 		fail("v8project.yaml не найден — это не проект 1С или файл не создан")
+
+	# ── 3b. Обязательный минимум топологии (1c-project-layout) ──
+	# Единственная правда о минимуме — REQUIRED_MINIMUM в scaffold скилла;
+	# doctor зовёт check процессом и ретранслирует, не дублируя список.
+	layout_scaffold = None
+	for _rel in ("../skills/1c-project-layout/scripts/scaffold.py",
+	             "../../skills/1c-project-layout/scripts/scaffold.py"):
+		_p = (Path(__file__).resolve().parent / _rel).resolve()
+		if _p.is_file():
+			layout_scaffold = _p
+			break
+	if layout_scaffold is None:
+		warn("скилл 1c-project-layout не вендорен — обязательный минимум "
+		     "топологии не проверяется")
+	else:
+		done = subprocess.run(
+			[sys.executable, str(layout_scaffold), "check", "--dir", str(root)],
+			capture_output=True, text=True)
+		if done.returncode == 0:
+			ok("минимум топологии выполнен (1c-project-layout)")
+		elif done.returncode == 1:
+			missed = [ln.split("\t")[1] for ln in done.stdout.splitlines()
+			          if ln.startswith("miss\t")]
+			fail("обязательная топология неполна: " + ", ".join(missed)
+			     + " — навык 1c-project-layout, ПОЛНЫЙ ритуал со всеми "
+			     "вопросами (не молчаливое дооснащение дефолтами)")
+		else:
+			fail(f"scaffold check упал (exit {done.returncode}): "
+			     f"{done.stderr.strip()[:120]}")
 
 	wire = Path(__file__).resolve().parent / "wire_config.py"
 	if (root / ".zcode" / "config.json").is_file():

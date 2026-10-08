@@ -91,6 +91,24 @@ def main() -> int:
 		check("python3 перед bash-скриптом не советуется",
 		      "python3 .zcode/1c/scripts/start_1c_db.sh" not in r.stdout, r.stdout[:400])
 
+		# ── 3b. обязательный минимум топологии (зовёт scaffold check) ──
+		r = run_doctor(root)
+		check("неполный минимум — FAIL с перечнем",
+		      "обязательная топология неполна" in r.stdout
+		      and "packagedef" in r.stdout, r.stdout[:600])
+		check("FAIL ведёт в навык и полный ритуал",
+		      "1c-project-layout" in r.stdout and "ПОЛНЫЙ ритуал" in r.stdout,
+		      r.stdout[:600])
+		for rel in ("src/cf", "packagedef", "AGENTS.md", ".gitignore",
+		            ".gitattributes"):
+			(root / rel).mkdir(parents=True, exist_ok=True) if rel == "src/cf" \
+				else (root / rel).write_text("", encoding="utf-8")
+		r = run_doctor(root)
+		check("полный минимум — OK-строка",
+		      "минимум топологии выполнен" in r.stdout, r.stdout[:600])
+		check("FAIL топологии исчез", "обязательная топология неполна" not in r.stdout,
+		      r.stdout[:600])
+
 		return summary()
 
 
