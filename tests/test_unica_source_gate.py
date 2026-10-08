@@ -160,6 +160,23 @@ def main() -> int:
 		check("правило: push main с full блокируется", r.returncode == 2, f"exit {r.returncode}")
 		r = run_push("main", full=None)
 		check("правило: push main без full проходит", r.returncode == 0, f"exit {r.returncode}")
+
+		# ── контрактная форма 0.13: op наверху, параметры в args (#13) ──
+		r = pre("mcp__unica__run", {"op": "push", "args": {
+			"force": True, "sourceSet": "main", "full": True, "cwd": cwd}})
+		check("контрактная форма: push main с full блокируется правилом с op",
+		      r.returncode == 2, f"exit {r.returncode}")
+		r = pre("mcp__unica__run", {"op": "push", "args": {
+			"force": True, "sourceSet": "Тесты", "cwd": cwd}})
+		check("контрактная форма: push расширения без full блокируется",
+		      r.returncode == 2, f"exit {r.returncode}")
+		r = pre("mcp__unica__run", {"op": "push", "args": {
+			"force": True, "sourceSet": "Тесты", "full": True, "cwd": cwd}})
+		check("контрактная форма: push расширения с full проходит",
+		      r.returncode == 0, f"exit {r.returncode}")
+		r = pre("mcp__unica__run", {"op": "launch", "args": {"full": True, "cwd": cwd}})
+		check("контрактная форма: чужой op мимо push-правил",
+		      r.returncode == 0, f"exit {r.returncode}")
 		(zdir / "contour.json").unlink()
 
 		# ── чужой сервер MCP не задевается ──
@@ -188,6 +205,10 @@ def main() -> int:
 		r = run_push("main", call_cwd=str(wt))
 		check("unica в неинициализированном ворктри блокируется", r.returncode == 2, f"exit {r.returncode}")
 		check("причина называет init_worktree", "init_worktree" in r.stderr, r.stderr[:200])
+		r = pre("mcp__unica__run", {"op": "push", "cwd": str(wt),
+		        "args": {"sourceSet": "main"}})
+		check("контрактная форма: верхний cwd доходит до ворктри-ветки",
+		      r.returncode == 2 and "init_worktree" in r.stderr, f"exit {r.returncode}")
 		(wt / "v8project.local.yaml").write_text("infobase:\n  user: bot\n", encoding="utf-8")
 		(wt / "build" / "tools").mkdir(parents=True)
 		r = run_push("main", call_cwd=str(wt))
@@ -198,7 +219,7 @@ def main() -> int:
 		import os
 		os.environ["ZCODE_1C_STATE_DIR"] = state
 		from ib_lock import acquire_base_lock, release_base_lock, resolve_infobase_connection  # noqa: E402
-		from contour_common import session_state_dir  # noqa: E402
+		from contour_common import session_state_dir, unica_args  # noqa: E402
 		connection = resolve_infobase_connection(cwd)
 		check("связь базы прочитана из v8project.yaml", bool(connection), "пусто")
 		# предыдущие успешные вызовы сами захватывали замок — чистим перед сценарием
@@ -223,6 +244,23 @@ def main() -> int:
 		time.sleep(0.05)
 		r = run_push("main")
 		check("после освобождения замка операция проходит", r.returncode == 0, f"exit {r.returncode}")
+
+		# ── unica_args: канонизация форм вызова (юнит, #13) ──
+		flat = unica_args({"op": "push", "full": True})
+		wrapped = unica_args({"args": {"op": "push", "full": True}})
+		contract = unica_args({"op": "push", "args": {"full": True}})
+		conflict = unica_args({"op": "launch", "args": {"op": "push"}})
+		notdict = unica_args({"args": "x"})
+		check("unica_args: плоская форма без изменений",
+		      flat == {"op": "push", "full": True}, str(flat))
+		check("unica_args: wrapper-форма разворачивается",
+		      wrapped == {"op": "push", "full": True}, str(wrapped))
+		check("unica_args: контрактная 0.13 сохраняет верхний op",
+		      contract == {"op": "push", "full": True}, str(contract))
+		check("unica_args: внутренний args приоритетен на конфликте",
+		      conflict == {"op": "push"}, str(conflict))
+		check("unica_args: args не-словарь не разворачивается",
+		      notdict == {"args": "x"}, str(notdict))
 
 	return summary()
 

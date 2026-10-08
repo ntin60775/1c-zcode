@@ -188,8 +188,8 @@ UNICA_TOOLS_DEFAULT = {
 	# правила инвариантов пересборки; по умолчанию ПУСТО — semantics push/full
 	# в 0.13 отличается от fullRebuild 0.12, до сверки на стенде гейт нейтрален.
 	# Пример правила (включается в contour.json проекта):
-	#   {"tool": "run", "op": "push", "source_set": "extensions",
-	#    "require": {"args.full": true},
+	#   {"tool": "run", "op": "push", "source_sets": "extensions",
+	#    "require": {"full": true},
 	#    "message": "частичная загрузка расширений в этом проекте запрещена"}
 	"rebuild_rules": [],
 }
@@ -215,9 +215,19 @@ def unica_server_name(root: str) -> str:
 
 
 def unica_args(tool_input) -> dict:
-	"""Аргументы вызова юники из tool_input. Клиент MCP может заворачивать
-	их вложенно ({"args": {...}}) — здесь разворачивается всегда."""
+	"""Канонические аргументы вызова юники из tool_input.
+
+	Две живые формы входа: контракт 0.13 держит глагол/операцию на верхнем
+	уровне, параметры — в контейнере args (unica.run {"op": "push",
+	"args": {"full": …}}); клиент MCP может заворачивать и всё целиком
+	({"args": {"op": "push", "full": …}}). Канонический вид — слияние:
+	верхний уровень базой, внутренний args поверх (внутренний приоритетен),
+	сам контейнер args в результат не входит. Плоская форма — как есть.
+	"""
 	args = tool_input if isinstance(tool_input, dict) else {}
-	if isinstance(args.get("args"), dict):
-		args = args["args"]
-	return args
+	inner = args.get("args")
+	if not isinstance(inner, dict):
+		return args
+	merged = {key: value for key, value in args.items() if key != "args"}
+	merged.update(inner)
+	return merged
