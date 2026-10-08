@@ -297,9 +297,19 @@ def main() -> int:
 		elif done.returncode == 1:
 			missed = [ln.split("\t")[1] for ln in done.stdout.splitlines()
 			          if ln.startswith("miss\t")]
-			fail("обязательная топология неполна: " + ", ".join(missed)
-			     + " — навык 1c-project-layout, ПОЛНЫЙ ритуал со всеми "
-			     "вопросами (не молчаливое дооснащение дефолтами)")
+			# вербдикт лечения — машиночитаемый маркер check (path\tmigrator|ritual);
+			# без него (вендоренный scaffold старее v0.4.41) — ритуал, как раньше
+			path_marker = next((ln.split("\t")[1] for ln in done.stdout.splitlines()
+			                    if ln.startswith("path\t")), "ritual")
+			if path_marker == "migrator":
+				fail("обязательная топология неполна: " + ", ".join(missed)
+				     + " — лечение: scripts/migrate_from_omp.py + конвертация "
+				     "покрытия из docs/omp-migrated (канон ишью #16), "
+				     "не полный ритуал навыка")
+			else:
+				fail("обязательная топология неполна: " + ", ".join(missed)
+				     + " — навык 1c-project-layout, ПОЛНЫЙ ритуал со всеми "
+				     "вопросами (не молчаливое дооснащение дефолтами)")
 		else:
 			fail(f"scaffold check упал (exit {done.returncode}): "
 			     f"{done.stderr.strip()[:120]}")

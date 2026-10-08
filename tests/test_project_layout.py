@@ -209,6 +209,8 @@ def main() -> None:
 		_lib.check("check: юнит-наследие опознано подсказкой про мигратор",
 		           "migrate_from_omp" in r.stdout and "tests/cfe" in r.stdout,
 		           r.stdout[:500])
+		_lib.check("check: смешанное наследие (куча miss) — path\tritual",
+		           "path\tritual" in r.stdout, r.stdout[:500])
 		# чистое наследие (miss только tests/e2e) — финал ведёт в мигратор,
 		# не в полный ритуал; смешанный случай — ритуал остаётся
 		p10 = os.path.join(tmp, "legacy")
@@ -222,11 +224,15 @@ def main() -> None:
 		_lib.check("check: чистое наследие — финал про мигратор",
 		           r.returncode == 1 and "путь лечения выше (мигратор)" in r.stdout
 		           and "ПОЛНЫМ ритуалом" not in r.stdout, r.stdout[-300:])
+		_lib.check("check: path-маркер migrator для чистого наследия",
+		           "path\tmigrator" in r.stdout, r.stdout[-300:])
 		os.rmdir(os.path.join(p10, "vendor"))
 		r = sh("check", "--dir", p10)
 		_lib.check("check: наследие + ещё miss — полный ритуал возвращается",
 		           r.returncode == 1 and "ПОЛНЫМ ритуалом" in r.stdout,
 		           r.stdout[-300:])
+		_lib.check("check: path-маркер ritual в смешанном кейсе",
+		           "path\tritual" in r.stdout, r.stdout[-300:])
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())

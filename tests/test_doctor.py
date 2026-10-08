@@ -100,11 +100,22 @@ def main() -> int:
 		check("FAIL ведёт в навык и полный ритуал",
 		      "1c-project-layout" in r.stdout and "ПОЛНЫЙ ритуал" in r.stdout,
 		      r.stdout[:600])
-		for rel in ("src/cf", "src/cfe", "src/epf", "src/erf", "tests/e2e",
-		            "tools", "vendor"):
+		for rel in ("src/cf", "src/cfe", "src/epf", "src/erf", "tools", "vendor"):
 			(root / rel).mkdir(parents=True, exist_ok=True)
 		for rel in ("packagedef", "AGENTS.md", ".gitignore", ".gitattributes"):
 			(root / rel).write_text("", encoding="utf-8")
+		# юнит-наследие omp-эпохи (erp-mini-кейс): tests/cfe жив, tests/e2e нет
+		(root / "tests/cfe/Тесты").mkdir(parents=True, exist_ok=True)
+		r = run_doctor(root)
+		check("чистое наследие — doctor ведёт в мигратор (#18)",
+		      "обязательная топология неполна: tests/e2e" in r.stdout
+		      and "migrate_from_omp" in r.stdout, r.stdout[:600])
+		check("чистое наследие — без «ПОЛНЫЙ ритуал»",
+		      "ПОЛНЫЙ ритуал" not in r.stdout, r.stdout[:600])
+		import shutil as _sh
+		_sh.rmtree(root / "tests/cfe")
+		# канон: каталог рождается первым перенесённым тестом (конвертация из архива)
+		(root / "tests/e2e").mkdir(parents=True, exist_ok=True)
 		r = run_doctor(root)
 		check("полный минимум — OK-строка",
 		      "минимум топологии выполнен" in r.stdout, r.stdout[:600])

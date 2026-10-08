@@ -329,7 +329,13 @@ def cmd_git(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    """Детектор минимума: ok/miss строки для doctor и агента, exit 0/1."""
+    """Детектор минимума: ok/miss строки для doctor и агента, exit 0/1.
+
+    Ветвление лечения — машиночитаемая строка `path\\tmigrator|ritual`:
+    её парсит doctor 3b (не человекочитаемый финал). migrator — чистое
+    юнит-наследие (tests/cfe|tests/epf при единственном miss tests/e2e);
+    ritual — всё остальное (полный ритуал навыка).
+    """
     missing = []
     for rel, kind, why in REQUIRED_MINIMUM:
         dst = os.path.join(TARGET_DIR, rel)
@@ -344,12 +350,14 @@ def cmd_check(args: argparse.Namespace) -> int:
         # лечение: мигратор + демонтаж, не полный ритуал layout.
         legacy = [d for d in ("tests/cfe", "tests/epf")
                   if os.path.isdir(os.path.join(TARGET_DIR, d))]
+        migrator = bool(legacy) and missing == ["tests/e2e"]
         if legacy:
             log(f"наследие: найден юнит-стек omp-эпохи ({', '.join(legacy)}) — "
                 "tests/e2e лечится переносом покрытия и демонтажём "
                 "(scripts/migrate_from_omp.py, см. MIGRATION-FROM-OMP.md), "
                 "не полным ритуалом layout")
-        if legacy and missing == ["tests/e2e"]:
+        log(f"path\t{'migrator' if migrator else 'ritual'}")
+        if migrator:
             log("минимум топологии не выполнен — путь лечения выше (мигратор)")
         else:
             log("минимум топологии не выполнен — зови навык 1c-project-layout "
