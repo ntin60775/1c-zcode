@@ -1,0 +1,21 @@
+{
+  "schema": "contour-consumers/1",
+  "machine": {
+    "hostname": "ЗАПОЛНИ",
+    "operator": "ЗАПОЛНИ"
+  },
+  "project": {
+    "name": "ЗАПОЛНИ",
+    "path": "ЗАПОЛНИ"
+  },
+  "updated_at": "ЗАПОЛНИ",
+  "consumers": {
+    "plugins": [],
+    "unica": { "version": "" },
+    "testpilot": { "version": "", "venv": "" },
+    "services": []
+  },
+  "deploy_log": [],
+  "acceptance": [],
+  "notes": "Каркас реестра потребителей. Файл машино-локальный, ВНЕ git (.zcode/1c/registry.local.json в .gitignore). Правила — в схеме рядом (registry.schema.json) и навыке 1c-project-bootstrap; поля заполнять по факту, журналы — append-only."
+}

@@ -14,3 +14,6 @@ src/cf/.build/
 
 # Локальный оверлей машины (креды, путь платформы) — никогда в git.
 v8project.local.yaml
+
+# Реестр потребителей контура (машино-локальный, схема в .zcode/1c/templates)
+.zcode/1c/registry.local.json

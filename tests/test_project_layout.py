@@ -177,6 +177,31 @@ def main() -> None:
 		_lib.check("all: packagedef в корне",
 		           os.path.isfile(os.path.join(p8, "packagedef")))
 
+		# ── 12. registry: шаблон и схема реестра потребителей ──
+		import json as _json
+		schema_p = REPO / "skills/1c-project-layout/templates/registry.schema.json"
+		tpl_p = REPO / "skills/1c-project-layout/templates/registry.template.json"
+		try:
+			schema = _json.loads(schema_p.read_text(encoding="utf-8"))
+			tpl = _json.loads(tpl_p.read_text(encoding="utf-8"))
+			parsed = True
+		except (OSError, _json.JSONDecodeError) as e:
+			parsed = False
+			_lib.check("registry: шаблон и схема — валидные JSON", False, str(e))
+		if parsed:
+			_lib.check("registry: контракт schema=contour-consumers/1",
+			           schema.get("properties", {}).get("schema", {}).get("const")
+			           == "contour-consumers/1"
+			           and tpl.get("schema") == "contour-consumers/1")
+			_lib.check("registry: required схемы покрыты каркасом",
+			           all(k in tpl for k in schema.get("required", [])))
+			_lib.check("registry: каркас ссылается на схему",
+			           "registry.schema.json" in tpl.get("notes", ""))
+		gi_tpl = (REPO / "skills/1c-project-layout/templates/gitignore.template") \
+			.read_text(encoding="utf-8")
+		_lib.check("registry: gitignore-шаблон держит файл вне git",
+		           ".zcode/1c/registry.local.json" in gi_tpl)
+
 		# ── 11. check: детектор обязательного минимума ──
 		p9 = os.path.join(tmp, "bare")
 		os.makedirs(p9)

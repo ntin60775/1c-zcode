@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "contour-consumers-registry-1",
+  "title": "Реестр потребителей контура 1С (contour-consumers/1)",
+  "description": "Машино-локальный реестр состояния контура в проекте и процесса деплоя. Живёт ВНЕ git (<проект>/.zcode/1c/registry.local.json) — машины и проекты разные, файл не переносится. Правила: (1) версии плагинов в consumers.plugins — зеркало .zcode/deployed.json (раннер владеет версиями, реестр — процессом); (2) deploy_log и acceptance — append-only, историю не переписывать; (3) запись делает агент в сессии проекта после каждого акта деплоя/приёмки; (4) followups с done=false — незакрытые обязательства (рестарты сессий, say-шаги), сверяются перед следующим update; (5) ломающие изменения схемы — новая версия contour-consumers/2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "machine", "updated_at", "consumers", "deploy_log"],
+  "properties": {
+    "schema": { "const": "contour-consumers/1" },
+    "machine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hostname"],
+      "properties": {
+        "hostname": { "type": "string", "description": "машина-потребитель; реестр машино-локален и не переносится" },
+        "operator": { "type": "string", "description": "владелец машины/оператор (имя, не креды)" }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "имя проекта-потребителя" },
+        "path": { "type": "string", "description": "путь на этой машине" }
+      }
+    },
+    "updated_at": { "type": "string", "description": "ISO 8601 момент последней записи" },
+    "consumers": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Кто потребляет контур в проекте на этой машине.",
+      "properties": {
+        "plugins": {
+          "type": "array",
+          "description": "Зеркало deployed.json (имя+ref); deployed_by/at — кто и когда катил.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "ref"],
+            "properties": {
+              "name": { "type": "string" },
+              "ref": { "type": "string" },
+              "deployed_at": { "type": "string" },
+              "deployed_by": { "type": "string", "description": "агент/сессия/оператор" }
+            }
+          }
+        },
+        "unica": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": { "type": "string" },
+            "note": { "type": "string" }
+          }
+        },
+        "testpilot": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": { "type": "string" },
+            "venv": { "type": "string" },
+            "note": { "type": "string" }
+          }
+        },
+        "services": {
+          "type": "array",
+          "description": "Живые потребители-службы: прокси 1c-db, публикации ibsrv, Xvfb-дисплеи и пр.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "endpoint": { "type": "string" },
+              "host_by": { "type": "string", "description": "чем поднимается (start_1c_db --headless, publish_ib.sh, distrobox:имя)" },
+              "note": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "deploy_log": {
+      "type": "array",
+      "description": "Журнал актов деплоя — append-only.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "actor", "action", "result"],
+        "properties": {
+          "at": { "type": "string" },
+          "actor": { "type": "string", "description": "агент/сессия/оператор" },
+          "action": { "type": "string", "description": "update-bundle 1c-contour / install X / remove X" },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "result": { "type": "string", "enum": ["ok", "partial", "failed"] },
+          "followups": {
+            "type": "array",
+            "description": "Незакрытые обязательства (рестарт сессии, say-шаги post_update) — сверять перед следующим update.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "owner", "done"],
+              "properties": {
+                "kind": { "type": "string", "description": "restart-session / post-update-say / ..." },
+                "owner": { "type": "string", "description": "human / agent" },
+                "done": { "type": "boolean" },
+                "note": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "array",
+      "description": "Журнал приёмок (doctor, e2e, смоки) — append-only.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "kind", "result"],
+        "properties": {
+          "at": { "type": "string" },
+          "kind": { "type": "string", "description": "doctor / e2e-full / smoke" },
+          "result": { "type": "string", "enum": ["green", "warn", "red"] },
+          "details": { "type": "string" }
+        }
+      }
+    },
+    "notes": { "type": "string" }
+  }
+}
