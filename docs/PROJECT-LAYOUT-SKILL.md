@@ -75,10 +75,16 @@ ZCode перенесены только контурные конфиги (`wire
 - `features/`, `fixtures/`, `tests/cfe/`, `tests/epf/` — Vanessa/YAxUnit
   заменены testpilot-e2e; фикстуры создают/удаляют данные сами тесты;
   унаследованное — в `docs/omp-migrated/tests/`, исполнять нельзя;
-- `lib/`, `vendor/`, `examples/`, `tasks/`, `packagedef`, `env.json`,
+- `lib/`, `vendor/`, `examples/`, `tasks/`, `env.json`,
   `oscript_modules/` — OneScript вне стека контура;
 - `.bsl-language-server.json`, sonar, cliff — форма BSL и качество — пак
   `1c-bsl-code-style` (приоритет контура над стандартами и стат-анализом).
+
+Исключение — `packagedef`: в доноре это дескриптор OneScript-проекта, здесь —
+пустой файл-маркер в корне, без расширения и содержимого. 1C Platform Tools
+в VS Code распознаёт проект по его наличию: нет `packagedef` — нет
+подсветки/языкового сервера. Создаёт scaffold (`structure`), наполнять
+содержимым не нужно (контракт проекта — `v8project.yaml` юники, не EDT).
 
 Каталожные `AGENTS.md` вместо `.gitkeep`: пустые каталоги трекаются в git и
 сразу несут правила (решение живого деплоя). Тексты — из живого деплоя,

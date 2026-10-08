@@ -49,14 +49,23 @@ def main() -> None:
 		           "| `src/cf/` |" in root_text and "| `build/` |" in root_text)
 		_lib.check("таблица: tools/mcp и docs отсутствуют",
 		           "tools/mcp" not in root_text and "`docs/`" not in root_text)
+		pd = Path(p1) / "packagedef"
+		_lib.check("packagedef создан в корне", pd.is_file())
+		_lib.check("packagedef пуст (0 байт)",
+		           pd.is_file() and pd.stat().st_size == 0,
+		           f"size={pd.stat().st_size if pd.exists() else 'нет файла'}")
 
 		# ── 2. идемпотентность: повтор ничего не меняет ──
 		before = {p: Path(p1, p).read_bytes()
 		          for p in ("AGENTS.md", "src/cf/AGENTS.md", "src/cfe/AGENTS.md")}
+		(Path(p1) / "packagedef").write_text("# свой маркер\n", encoding="utf-8")
 		r = sh("structure", "--dir", p1, "--name", "proj")
 		_lib.check("повтор exit 0", r.returncode == 0, r.stderr[:200])
 		unchanged = all(Path(p1, p).read_bytes() == data for p, data in before.items())
 		_lib.check("повтор: файлы не перезаписаны", unchanged)
+		_lib.check("повтор: packagedef не перезаписан",
+		           (Path(p1) / "packagedef").read_text(encoding="utf-8")
+		           == "# свой маркер\n")
 		_lib.check("повтор: лог содержит skip",
 		           "skip" in r.stdout, r.stdout[:200])
 
@@ -89,6 +98,8 @@ def main() -> None:
 		t6 = (Path(p1) / "src/cf/AGENTS.md").read_text(encoding="utf-8")
 		_lib.check("--force восстановил шаблон",
 		           t6.startswith("# Каталог src/cf"), t6[:60])
+		_lib.check("--force перезаписал packagedef пустым",
+		           (Path(p1) / "packagedef").read_bytes() == b"")
 
 		# ── 7. v8project: каркас + local; существующий не трогается ──
 		p5 = os.path.join(tmp, "v8")
@@ -155,6 +166,8 @@ def main() -> None:
 		           os.path.isfile(os.path.join(p8, "src/cf/AGENTS.md"))
 		           and os.path.isfile(os.path.join(p8, "v8project.yaml"))
 		           and os.path.isfile(os.path.join(p8, ".gitignore")))
+		_lib.check("all: packagedef в корне",
+		           os.path.isfile(os.path.join(p8, "packagedef")))
 	finally:
 		shutil.rmtree(tmp, ignore_errors=True)
 	sys.exit(_lib.summary())

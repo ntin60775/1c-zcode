@@ -4,7 +4,8 @@
 Субкоманды:
   structure   — каталоги src/{cf,cfe,epf,erf} + компоненты (tests/e2e,
                 tools/mcp, docs), каталожные AGENTS.md, корневой AGENTS.md
-                с таблицей структуры
+                с таблицей структуры, пустой packagedef (маркер
+                1C Platform Tools в VS Code)
   v8project   — каркас v8project.yaml + шаблон v8project.local.yaml
   git         — git init + .gitignore (только дозапись недостающих строк)
                 + .gitattributes + remote origin
@@ -206,6 +207,8 @@ def cmd_structure(args: argparse.Namespace) -> int:
 	written, ag_skipped = write_agents(dirs, args.dry_run, args.force)
 	log("Корневой AGENTS.md:")
 	write_root_agents(kinds, components, args.dry_run, args.force)
+	log("packagedef (пустой маркер 1C Platform Tools в VS Code):")
+	write_file("packagedef", "", args.dry_run, args.force)
 	log(f"structure: каталогов {created}/{skipped} (создано/пропущено), "
 	    f"каталожных AGENTS.md {written}/{ag_skipped}")
 	return 0

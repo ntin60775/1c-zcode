@@ -26,7 +26,9 @@ python3 "$SKILL_DIR/scripts/scaffold.py" all \
 - `structure` — каталоги по `--kinds` (cf/cfe/epf/erf) и `--components`
   (дефолт `tests-e2e`; `tools-mcp` — только когда нужен MCP `1c-db`,
   `docs` — по запросу), каталожные `AGENTS.md` в каждый каталог, корневой
-  `AGENTS.md` с таблицей структуры;
+  `AGENTS.md` с таблицей структуры, пустой `packagedef` в корне
+  (без расширения; маркер проекта для 1C Platform Tools в VS Code —
+  без него расширение не распознаёт проект; содержимое не наполнять);
 - `v8project` — каркас `v8project.yaml` (`--ib-connection`, дефолт
   `File=build/ib`) + шаблон `v8project.local.yaml` с закреплёнными знаниями
   деплоя (ibcmd для файловой базы из-за GTK, путь платформы каталогом без
