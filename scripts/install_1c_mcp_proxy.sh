@@ -33,5 +33,5 @@ cat <<FIN
 готово: $VENV
 
 проверка:   cd "$TOOLKIT" && PORT=6003 timeout 5 "$VENV/bin/python" -m onec_mcp_toolkit_proxy
-подъём:     python3 <контур>/scripts/start_1c_db.sh <проект>   (сам поднимет прокси и клиент)
+подъём:     bash <контур>/scripts/start_1c_db.sh <проект>     (сам поднимет прокси и клиент)
 FIN

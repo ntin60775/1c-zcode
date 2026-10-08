@@ -309,7 +309,7 @@ def main() -> int:
 			else:
 				ok(f"1c-db отвечает (HTTP {e.code}): {db_url}")
 		except Exception:
-			warn(f"1c-db не отвечает ({db_url}) — подними: python3 "
+			warn(f"1c-db не отвечает ({db_url}) — подними: bash "
 			     ".zcode/1c/scripts/start_1c_db.sh . (Linux: сам поднимет "
 			     "прокси и клиент с mode=proxy; install_1c_mcp_proxy.sh один раз)")
 

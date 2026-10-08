@@ -80,6 +80,17 @@ def main() -> int:
 		check("без ibsrv — WARN с подсказкой distrobox:<имя>", "distrobox:<имя>" in r.stdout,
 		      r.stdout[:400])
 
+		# ── 1c-db недоступен: подсказка зовёт bash, не python3 (#14) ──
+		scaffold(root, '{"1c_db": {"url": "http://127.0.0.1:9/mcp"}}')
+		r = run_doctor(root)
+		check("1c-db закрыт — WARN с подсказкой подъёма",
+		      "1c-db не отвечает" in r.stdout and "start_1c_db.sh" in r.stdout,
+		      r.stdout[:400])
+		check("подсказка запускает скрипт через bash",
+		      "bash .zcode/1c/scripts/start_1c_db.sh" in r.stdout, r.stdout[:400])
+		check("python3 перед bash-скриптом не советуется",
+		      "python3 .zcode/1c/scripts/start_1c_db.sh" not in r.stdout, r.stdout[:400])
+
 		return summary()
 
 

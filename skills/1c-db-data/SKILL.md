@@ -16,7 +16,7 @@ when_to_use: "Нужно заглянуть в базу 1С: выполнить 
 # один раз на машину:
 <контур>/scripts/install_1c_mcp_proxy.sh <клон-1c-mcp-toolkit>
 # поднять (Linux: прокси + клиент mode=proxy; Windows: embedded):
-python3 .zcode/1c/scripts/start_1c_db.sh .          # --headless под Xvfb
+bash .zcode/1c/scripts/start_1c_db.sh .          # --headless под Xvfb
 ```
 
 Креды базе не нужны — обработка уже внутри сессии. REST `/api/*` того же
