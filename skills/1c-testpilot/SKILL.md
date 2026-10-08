@@ -22,8 +22,10 @@ metadata:
 - Клиент тестирования слушает TCP только при старте с ключом
   `/TESTCLIENT '-TPort'48010` (формат вприлип, из `_runtime.py`). Обычный
   клиент владельца без этого ключа НЕ подключить — сначала поднять
-  тест-клиента с TPort (на видимый дисплей: `env -u WAYLAND_DISPLAY
-  DISPLAY=:1 1cv8c ENTERPRISE /IBConnectionString … /TESTCLIENT '-TPort'48010
+  тест-клиента с TPort (на видимый дисплей владельца — адрес из
+  `contour.json → 1c.display.visible`, типовой `:1`, нет ключа — спроси:
+  `env -u WAYLAND_DISPLAY DISPLAY=<видимый> 1cv8c ENTERPRISE
+  /IBConnectionString … /TESTCLIENT '-TPort'48010
   /DisableStartupMessages`), затем `connect(port=48010)`.
 - `close()` после attach — только disconnect, ЧУЖОЙ клиент не гасит.
   После launch — гасит штатно (15 с, потом kill).
@@ -186,6 +188,8 @@ testpilot.execute_command(command="e1cib/list/Документ.АСМ_АктОт
 
 - Пароль светится в cmdline клиента (`/IBConnectionString`) — известное
   ограничение; не публиковать, ротация — задача владельца `v8project.local.yaml`.
-- Тест-клиент на видимый дисплей: `env -u WAYLAND_DISPLAY DISPLAY=:1 …`
-  (софтверный рендер `GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1` по ситуации);
+- Тест-клиент на видимый дисплей: `env -u WAYLAND_DISPLAY
+  DISPLAY=<1c.display.visible из contour.json, дефолт :1> …` — адрес
+  видимого дисплея машина-специфичен, не хардкодь (софтверный рендер
+  `GDK_BACKEND=x11 LIBGL_ALWAYS_SOFTWARE=1` по ситуации);
   в Xvfb — `desktop: isolated` профиля.

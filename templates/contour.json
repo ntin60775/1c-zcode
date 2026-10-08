@@ -7,6 +7,9 @@
 			"port": 8414,
 			"ibsrv": "distrobox:auto",
 			"http_services": []
+		},
+		"display": {
+			"visible": ":1"
 		}
 	},
 	"1c_db": {
