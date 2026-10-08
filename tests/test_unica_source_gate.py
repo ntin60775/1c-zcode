@@ -177,6 +177,15 @@ def main() -> int:
 		r = pre("mcp__unica__run", {"op": "launch", "args": {"full": True, "cwd": cwd}})
 		check("контрактная форма: чужой op мимо push-правил",
 		      r.returncode == 0, f"exit {r.returncode}")
+
+		# ── push без sourceSet = main — дефолт раннера (#15) ──
+		r = pre("mcp__unica__run", {"args": {"op": "push", "force": True,
+		                                 "full": True, "cwd": cwd}})
+		check("без sourceSet: main-правило (forbid full) блокирует",
+		      r.returncode == 2, f"exit {r.returncode}")
+		r = pre("mcp__unica__run", {"args": {"op": "push", "force": True, "cwd": cwd}})
+		check("без sourceSet: без full проходит (extensions-селектор пустоту не матчит)",
+		      r.returncode == 0, f"exit {r.returncode}")
 		(zdir / "contour.json").unlink()
 
 		# ── чужой сервер MCP не задевается ──

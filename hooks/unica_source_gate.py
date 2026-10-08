@@ -23,6 +23,9 @@ upload без apply) отличается от 0.12 (fullRebuild), и блоки
    "require": {"full": true}, "message": "…"}     # require нарушен → блок
   {"tool": "run", "op": "push", "source_sets": "main",
    "forbid": {"full": true}, "message": "…"}      # forbid присутствует → блок
+Селекторы source_sets: "main" | "extensions" (EXTENSION-наборы v8project.yaml)
+| список имён | "any"; вызов без sourceSet считается "main" — дефолт раннера
+основной набор, правила для main защищают и его.
 
 Контракт хука ZCode: вход — JSON на stdin (hook_event_name, session_id,
 tool_name, tool_input, cwd); выход — 0 проходит, 2 блокирует с причиной
@@ -195,6 +198,14 @@ def runner_op(args: dict) -> str:
 
 
 def _rule_matches_source(rule: dict, source_set: str, extensions: set) -> bool:
+	"""Селекторы: None/"any" — все; "extensions" — EXTENSION-наборы
+	v8project.yaml; "main" — основной набор; список/строка — точные имена.
+	Вызов без sourceSet (дефолт раннера — основной набор) считается "main":
+	правила для main обязаны защищать и такой вызов, молчаливый пропуск
+	хуже широкого срабатывания.
+	"""
+	if not source_set:
+		source_set = "main"
 	selector = rule.get("source_sets")
 	if selector is None or selector == "any":
 		return True
