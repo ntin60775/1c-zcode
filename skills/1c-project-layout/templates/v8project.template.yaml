@@ -1,7 +1,9 @@
 # Контракт v8-runner/unica (формат — references/tooling/v8project.md плагина
 # unica). Машинные адреса, платформа и креды — в v8project.local.yaml.
+# Ключи execution_timeout и push.partialLoadThreshold НЕ использовать:
+# v8-runner 0.14 (unica rc.7+) отвергает их как invalid_source (общего
+# дедлайна и порога частичной загрузки больше нет — per-step в раннере).
 workPath: 'build'
-execution_timeout: 300000
 format: DESIGNER
 infobases:
   origin:
@@ -14,5 +16,3 @@ source-set:
   # - name: <ИмяРасширения>
   #   type: EXTENSION
   #   path: src/cfe/<ИмяРасширения>
-push:
-  partialLoadThreshold: 20

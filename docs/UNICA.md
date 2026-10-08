@@ -39,10 +39,30 @@ Unica 0.13 публикуется кандидатом только на вет�
 Изменений в коде контура не требуется: сервер MCP у обоих каналов
 называется `unica`, гейты матчат `mcp__unica__*`.
 
-## Текущая версия: 0.13.0-rc.5 (канал next, с 2026-10-04)
+## Текущая версия: 0.13.0-rc.7 (канал next, с 2026-10-08)
 
-Контракт `unica.run` изменился против rc.3 (не помечен breaking, но ломает
-плоскую форму):
+Обновление с rc.5 исполнено по [ишью #17](https://github.com/ntin60775/1c-zcode/issues/17):
+кэш `unica-next/unica/0.13.0-rc.7/`, `installed_plugins.json` атомарно, rc.5 в кэше — откат.
+
+**Breaking rc.7: v8-runner 0.14 отвергает ключи v8project.yaml**
+(`invalid_source`, «remove the key»):
+
+- `execution_timeout` — общего дедлайна команды больше нет, только per-step;
+- `push.partialLoadThreshold` (и legacy `build.partialLoadThreshold`) —
+  порога частичной загрузки нет: push без `full: true` частичный и так;
+- словарь ops на пустой `run {op: ""}` больше не отдаётся
+  (`unsupported_operation`), canonical-имя параметра полной загрузки —
+  `fullRebuild` (алиас `full` принимается, контурные `rebuild_rules` живы).
+
+Шаблон `v8project.template.yaml` (навык 1c-project-layout) этих ключей не
+ставит с v0.4.41; в живых проектах ключи убраны 2026-10-08.
+
+Прочее rc.7 (release notes): фиксы форм (ID элементов, HTMLDocumentField),
+meta (Form.bin, константы через props.set, ScheduledJob defaults), launch
+без sources, EOL-стриминг в check, сняты произвольные квоты рантайма/
+поиска, saved plans переживают вызовы.
+
+Контракт `unica.run` rc.5 (не помечен breaking, но ломает плоскую форму):
 
 - аргументы операции — **вложенно**: `{op: "push", args: {sourceSet: ...},
   dryRun: true|false}`; плоская `{op, sourceSet}` → «canonical invocation
