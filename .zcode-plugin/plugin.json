@@ -1,6 +1,6 @@
 {
   "name": "1c-zcode",
-  "version": "0.4.41",
+  "version": "0.4.42",
   "description": "ZCode-плагин контура 1С-разработки: гейты (исходники через Unica, сверка с документацией, прод-контур, ретраи, замок ИБ, BSL-стиль), e2e-тест-контур (1c-testpilot + 1c-mcp-toolkit), workflows, bootstrap и миграция с omp. Нативный порт 1c-omp.",
   "author": {
     "name": "Valera Kovalskii"
