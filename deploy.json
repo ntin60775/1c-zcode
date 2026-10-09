@@ -11,6 +11,10 @@
       "to": ".zcode/skills/1c-unica-worktree"
     },
     {
+      "from": "skills/1c-unica-artifacts",
+      "to": ".zcode/skills/1c-unica-artifacts"
+    },
+    {
       "from": "skills/1c-test-contour",
       "to": ".zcode/skills/1c-test-contour"
     },

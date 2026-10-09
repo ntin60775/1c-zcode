@@ -122,6 +122,74 @@ def main() -> int:
 		check("FAIL топологии исчез", "обязательная топология неполна" not in r.stdout,
 		      r.stdout[:600])
 
+		# ── 1b. артефакты рантайма: манифест ↔ кэш (fake HOME) ──
+		import json as _json
+		SHA86 = "e" * 64
+
+		def make_home(state: str) -> Path:
+			home = root / f"fakehome-{state}"
+			ver = "0.13.0-rc.7"
+			install = home / ".zcode/cli/plugins/cache/unica-next/unica" / ver
+			install.mkdir(parents=True)
+			(install / "runtime-manifest.json").write_text(_json.dumps({
+				"artifacts": {"bsl-analyzer": {
+					"version": "0.2.86", "role": "engine",
+					"targets": {"linux-x64": {
+						"asset": {"sha256": SHA86},
+						"files": [{"path": "bsl-analyzer", "sha256": SHA86,
+						           "executable": True}],
+					}},
+				}},
+			}, ), encoding="utf-8")
+			reg = home / ".zcode/cli/plugins"
+			reg.mkdir(parents=True, exist_ok=True)
+			(reg / "installed_plugins.json").write_text(_json.dumps({
+				"plugins": [{"id": "unica@unica-next", "name": "unica",
+				             "version": ver, "installPath": str(install)}],
+			}), encoding="utf-8")
+			rt = home / ".zcode/cli/plugins/data/unica@unica-next/runtimes"
+			if state in ("stale", "ok", "partial"):
+				if state == "stale":
+					good = rt / f"bsl-analyzer/0.2.67--{'c' * 64}/linux-x64"
+					aver, asha = "0.2.67", "c" * 64
+				else:
+					good = rt / f"bsl-analyzer/0.2.86--{SHA86}/linux-x64"
+					aver, asha = "0.2.86", SHA86
+				good.mkdir(parents=True)
+				binary = good / "bsl-analyzer"
+				binary.write_text("#!/bin/sh\n", encoding="utf-8")
+				binary.chmod(0o755)
+				(good / ".ready.json").write_text(_json.dumps(
+					{"artifact": "bsl-analyzer", "version": aver,
+				     "target": "linux-x64", "assetSha256": asha}), encoding="utf-8")
+			if state == "partial":
+				(rt / ".partial/bsl-analyzer").mkdir(parents=True)
+			return home
+
+		scaffold(root, "{}")
+		r = run_doctor(root, {"HOME": str(make_home("stale"))})
+		check("устаревший кэш — FAIL с артефактом и версией",
+		      "артефакт bsl-analyzer 0.2.86 отсутствует" in r.stdout, r.stdout[:600])
+		check("FAIL называет provider_unavailable", "provider_unavailable" in r.stdout,
+		      r.stdout[:600])
+		check("FAIL ведёт в скилл 1c-unica-artifacts", "1c-unica-artifacts" in r.stdout,
+		      r.stdout[:600])
+
+		r = run_doctor(root, {"HOME": str(make_home("ok"))})
+		check("полный кэш — OK-строка", "артефакты манифеста на месте" in r.stdout,
+		      r.stdout[:600])
+
+		r = run_doctor(root, {"HOME": str(make_home("partial"))})
+		check(".partial — WARN", "остался .partial" in r.stdout, r.stdout[:600])
+		check(".partial не роняет чек артефактов",
+		      "артефакты манифеста на месте" in r.stdout, r.stdout[:600])
+
+		r = run_doctor(root, {"HOME": str(make_home("empty"))})
+		check("нет кэша рантаймов — WARN про первый старт",
+		      "кэш рантаймов юники не создан" in r.stdout, r.stdout[:600])
+		check("без кэша нет FAIL по артефактам",
+		      "отсутствует в кэше" not in r.stdout, r.stdout[:600])
+
 		return summary()
 
 

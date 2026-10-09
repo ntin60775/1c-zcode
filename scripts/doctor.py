@@ -3,6 +3,11 @@
 
 Проверяет (без 1С и сети, кроме явных http-проб):
   1. Unica установлена и ровно один канал; версия >= UNICA_MIN.
+  1b. Артефакты рантайма: runtime-manifest.json установленной юники ↔ кэш
+      (каталог <версия>--<sha256>, файлы, .ready.json; .partial —
+      предупреждение). Сервер стартует и без артефактов — ping этот провал
+      не видит, он всплывает provider_unavailable'ом (скилл
+      1c-unica-artifacts).
   2. 1c-testpilot в PATH + окружение e2e-прогонов (pytest в venv); API-публикация (ibsrv):
      env > contour.json (1c.testpilot.python, 1c.publish.ibsrv — в т.ч. режим
      'distrobox:<имя>'/'distrobox:auto') > детект.
@@ -23,6 +28,7 @@
 """
 import json
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -91,7 +97,8 @@ def main() -> int:
 		for meta in plugins or []:
 			if isinstance(meta, dict) and str(meta.get("name") or "") == "unica":
 				plugin_id = str(meta.get("id") or meta.get("name") or "unica")
-				unica_entries.append((plugin_id, str(meta.get("version") or "0")))
+				unica_entries.append((plugin_id, str(meta.get("version") or "0"),
+				                      str(meta.get("installPath") or "")))
 	except (OSError, json.JSONDecodeError, AttributeError):
 		warn("реестр установленных плагинов не читается — проверь unica руками")
 	if not unica_entries:
@@ -99,10 +106,10 @@ def main() -> int:
 		     f"версия >= {UNICA_MIN})")
 	elif len(unica_entries) > 1:
 		fail("unica установлена в нескольких каналах одновременно "
-		     f"({', '.join(k for k, _ in unica_entries)}) — конфликт имени MCP, "
+		     f"({', '.join(k for k, _, _ in unica_entries)}) — конфликт имени MCP, "
 		     "оставь ровно один")
 	else:
-		key, version = unica_entries[0]
+		key, version, _install = unica_entries[0]
 		if version_ge(version, UNICA_MIN):
 			ok(f"unica {version} ({key}) >= {UNICA_MIN}")
 		else:
@@ -116,6 +123,94 @@ def main() -> int:
 			     f"лечится: chmod +x '{cache_root}/bootstrap/bin/'*/*/unica-bootstrap*")
 		elif bootstrap.is_file():
 			ok(f"bootstrap исполняем ({cache_root.name})")
+
+	# ── 1b. Артефакты рантайма: манифест установленной юники ↔ кэш ──
+	# MCP-сервер стартует и без недокачанных артефактов — ping/handshake
+	# провал не ловят, он всплывает provider_unavailable'ом на первом вызове
+	# провайдера (bsl_diagnostics и др.). Лечение — скилл 1c-unica-artifacts.
+	if unica_entries:
+		ukey, uversion, uinstall = unica_entries[0]
+		manifest_path = Path(uinstall) / "runtime-manifest.json" if uinstall else None
+		if manifest_path is None or not manifest_path.is_file():
+			channel = ukey.split("@", 1)[1] if "@" in ukey else "*"
+			hits = sorted((Path.home() / ".zcode" / "cli" / "plugins" / "cache").glob(
+				f"{channel}/*/{uversion}/runtime-manifest.json"))
+			manifest_path = hits[-1] if hits else None
+		manifest = None
+		if manifest_path is None:
+			warn("runtime-manifest.json юники не найден — сверка артефактов пропущена")
+		else:
+			try:
+				manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+			except (OSError, json.JSONDecodeError):
+				manifest = None
+			if not isinstance(manifest, dict) or not isinstance(manifest.get("artifacts"), dict):
+				warn("runtime-manifest.json юники не читается — сверка артефактов пропущена")
+				manifest = None
+		if manifest:
+			machine = platform.machine().lower()
+			if sys.platform.startswith("win"):
+				target = "win-x64"
+			elif sys.platform == "darwin":
+				target = "darwin-arm64" if machine in ("arm64", "aarch64") else "darwin-x64"
+			elif machine in ("x86_64", "amd64"):
+				target = "linux-x64"
+			elif machine in ("arm64", "aarch64"):
+				target = "linux-arm64"
+			else:
+				target = ""
+			if not target:
+				warn(f"платформа {machine} не опознана — сверка артефактов пропущена")
+			else:
+				runtimes = Path.home() / ".zcode" / "cli" / "plugins" / "data" / ukey / "runtimes"
+				if not runtimes.is_dir():
+					warn("кэш рантаймов юники не создан — первый старт качает "
+					     "артефакты; повтори /1c-doctor позже")
+				else:
+					applicable = good = 0
+					for name, spec in sorted(manifest["artifacts"].items()):
+						entry = spec.get("targets", {}).get(target) if isinstance(spec, dict) else None
+						if not entry:
+							continue  # артефакт не поставляется под эту платформу
+						applicable += 1
+						aver = str(spec.get("version") or "")
+						asha = str((entry.get("asset") or {}).get("sha256") or "")
+						adir = runtimes / name / f"{aver}--{asha}"
+						tdir = adir / target
+						if not adir.is_dir():
+							fail(f"артефакт {name} {aver} отсутствует в кэше "
+							     f"({runtimes / name}) — провайдер ответит "
+							     "provider_unavailable; лечение: скилл "
+							     "1c-unica-artifacts (докачка или копия из соседнего "
+							     "кэша установки со сверкой sha256 по манифесту)")
+							continue
+						files_ok = all((tdir / str(f.get("path", "__missing__"))).is_file()
+						               for f in (entry.get("files") or []) if isinstance(f, dict))
+						if not files_ok:
+							fail(f"артефакт {name} {aver}: в {target}/ не все файлы "
+							     "из манифеста — незавершённая установка; скилл "
+							     "1c-unica-artifacts")
+							continue
+						ready_ok = False
+						try:
+							ready = json.loads((tdir / ".ready.json").read_text(encoding="utf-8"))
+							ready_ok = (ready.get("version") == aver
+							            and ready.get("target") == target
+							            and ready.get("assetSha256") == asha)
+						except (OSError, json.JSONDecodeError):
+							pass
+						if not ready_ok:
+							fail(f"артефакт {name} {aver}: .ready.json отсутствует или "
+							     "расходится с манифестом — установка не признана "
+							     "завершённой; скилл 1c-unica-artifacts")
+							continue
+						good += 1
+					if applicable and good == applicable:
+						ok(f"артефакты манифеста на месте ({good} из {applicable}, {target})")
+					if (runtimes / ".partial").is_dir():
+						warn("в кэше рантаймов остался .partial — след оборванной закачки; "
+						     "сам по себе не мешает, но говорит, что закачка на этой "
+						     "машине не работает (скилл 1c-unica-artifacts)")
 
 	# живая проверка MCP: handshake + tools/list (без хоста и без 1С)
 	if "--no-ping" not in sys.argv and unica_entries:
