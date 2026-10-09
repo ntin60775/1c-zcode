@@ -119,6 +119,8 @@ chmod +x ~/.zcode/cli/plugins/cache/unica*/*/*/bootstrap/bin/*/* \
 - Рантаймы старого omp-контура (`~/.codex/unica/runtimes/0.12.3`) не
   конфликтуют с ZCode-каналом (другой каталог), удаляются только при
   финальной чистке omp (см. MIGRATION-FROM-OMP.md).
+- Работа в git-ворктри, второй экземпляр сервера и cwd-механика хуков —
+  скилл `1c-unica-worktree` (вендорится в проекты с контуром).
 
 ## Нативная ZCode-поддержка в Unica (PR #1097, Draft — следить)
 

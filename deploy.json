@@ -7,6 +7,10 @@
       "to": ".zcode/skills/1c-contour"
     },
     {
+      "from": "skills/1c-unica-worktree",
+      "to": ".zcode/skills/1c-unica-worktree"
+    },
+    {
       "from": "skills/1c-test-contour",
       "to": ".zcode/skills/1c-test-contour"
     },
