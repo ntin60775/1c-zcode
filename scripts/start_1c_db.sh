@@ -124,7 +124,22 @@ if [[ $DBMODE == proxy && $MODE != stop ]]; then
 		# и внешние компоненты остаются заблокированы.
 		# Прод защищён независимо: mcp_gate блокирует execute_code в прод-контуре.
 		DANGER_KEEP="УдалитьФайлы,DeleteFiles,КопироватьФайл,CopyFile,ПереместитьФайл,MoveFile,СоздатьКаталог,CreateDirectory,COMОбъект,COMObject,ПодключитьВнешнююКомпоненту,AttachAddIn,УстановитьВнешнююКомпоненту,InstallAddIn"
+		# Анонимизация канала — ПО УМОЛЧАНИЮ ВКЛЮЧЕНА (решение владельца
+		# 2026-10-11: работа с базой без анонимизации запрещена): ответы
+		# execute_query/execute_code/get_object_by_link/get_event_log/
+		# find_references/get_access_rights токенизируются ([ORG-00001] и т.п.),
+		# токены восстанавливаются в параметрах обратных вызовов. Отключение —
+		# только явное CONTOUR_ANON=off (e2e-прогоны: сравнение сырых значений;
+		# run_e2e.sh экспортирует это сам) с WARN в логе прокси.
+		CONTOUR_ANON="${CONTOUR_ANON:-on}"
+		if [[ "$CONTOUR_ANON" == "on" ]]; then
+			ANON_ENV=(ANONYMIZATION_ENABLED=true)
+		else
+			ANON_ENV=(ANONYMIZATION_ENABLED=false)
+			echo "WARN: анонимизация канала 1c-db ВЫКЛЮЧЕНА (CONTOUR_ANON=off) — данные базы идут в ответах как есть" >&2
+		fi
 		( cd "$TOOLKIT" && setsid env PORT="$PORT" DANGEROUS_KEYWORDS="$DANGER_KEEP" \
+			"${ANON_ENV[@]}" \
 			"$VENV/bin/python" -m onec_mcp_toolkit_proxy >"$PROXY_LOG" 2>&1 & echo $! > "$PROXY_PIDFILE" )
 		echo "• прокси поднят (pid $(cat "$PROXY_PIDFILE")); лог: $PROXY_LOG"
 		for _ in $(seq 1 20); do

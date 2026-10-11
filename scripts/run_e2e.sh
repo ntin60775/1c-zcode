@@ -89,6 +89,10 @@ PY
 )"
 
 export TC1C_PROFILES_FILE="$PROFILES"
+# e2e-ассерты сравнивают сырые значения базы — анонимизация канала на время
+# прогона гасится (WARN печатает start_1c_db.sh); интерактивные сессии агента
+# работают с токенами по умолчанию
+export CONTOUR_ANON=off
 # Тест-клиент наследует окружение: без этого под Xvfb ловим чёрные окна
 # (Wayland/GTK, аппаратный GL) — тот же фикс, что у клиента 1c-db.
 export GDK_BACKEND=x11
@@ -151,6 +155,17 @@ if [ -f "$SWEEP" ]; then
 		python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('   было', d['found_before'], '| удалено', d['deleted'], '| осталось', d['found_after'])" "$ROOT/test-results/e2e-sweep.json" >&2
 		[ "$RC" = "0" ] && RC=3
 	fi
+fi
+
+# ── возврат канала к дефолту: прогон гасил анонимизацию (CONTOUR_ANON=off) ──
+# Прокси после прогона остался бы в raw-режиме — интерактивные сессии агента
+# обязаны получать токенизированные ответы. Рестарт клиента: переживает сам.
+if [ -f "$ROOT/.zcode/1c/scripts/start_1c_db.sh" ]; then
+	set +e
+	CONTOUR_ANON=on bash "$ROOT/.zcode/1c/scripts/start_1c_db.sh" "$ROOT" --stop >/dev/null 2>&1
+	CONTOUR_ANON=on bash "$ROOT/.zcode/1c/scripts/start_1c_db.sh" "$ROOT" --headless >/dev/null 2>&1 \
+		|| echo "WARN: не удалось вернуть анонимизированный стенд — запусти start_1c_db.sh <root> --headless руками" >&2
+	set -e
 fi
 
 exit "$RC"
