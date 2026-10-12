@@ -39,6 +39,10 @@
       "to": ".zcode/skills/1c-project-layout"
     },
     {
+      "from": "skills/1c-bsl-review-standards",
+      "to": ".zcode/skills/1c-bsl-review-standards"
+    },
+    {
       "from": "hooks",
       "to": ".zcode/hooks"
     },
