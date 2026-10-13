@@ -63,8 +63,11 @@ VER=0.2.86                        # version из манифеста
 SHA=<asset.sha256 целиком>        # из targets своей платформы (напр. linux-x64)
 SRC="$HOME/.codex/unica/runtimes/bsl-analyzer/${VER}--${SHA}"
 sha256sum "$SRC/linux-x64/bsl-analyzer"   # совпасть с манифестом байт-в-байт
-cp -r "$SRC" "$HOME/.zcode/cli/plugins/data/unica@unica-next/runtimes/bsl-analyzer/"
-test -x "$HOME/.zcode/cli/plugins/data/unica@unica-next/runtimes/bsl-analyzer/${VER}--${SHA}/linux-x64/bsl-analyzer"
+DST="$HOME/.zcode/cli/plugins/data/unica@unica/runtimes/bsl-analyzer"
+#  id установки у каждого канала свой: unica@unica (main), unica@unica-next (rc) —
+#  смотреть data/ на машине
+cp -r "$SRC" "$DST/"
+test -x "$DST/${VER}--${SHA}/linux-x64/bsl-analyzer"
 ```
 
 `.ready.json` приезжает вместе с каталогом; его поля обязаны совпадать с
