@@ -16,8 +16,8 @@ dryRun: true|false}` (аргументы операции — ВЛОЖЕННО �
 
 ### Инварианты
 
-1. Исходники 1С (`src/{cf,cfe,epf,erf}`, `tests/{cfe,epf}`) правятся
-   только через Unica — прямая правка блокируется гейтом.
+1. Исходники 1С (`src/{cf,cfe,epf,erf}`) правятся только через Unica —
+   прямая правка блокируется гейтом.
    Разовый обход: `.zcode/unica-gate-escalations.txt`.
 2. Мутации (`unica.apply`, `unica.run {op: push|upload|apply|reset}`) —
    только после непустой сверки с `unica.docs`. Пустой ответ не считается.
@@ -46,7 +46,5 @@ push; пропуск любого — отклонение от процедур
 Поведение проверяется e2e-тестами, которые агент пишет сам (write-first,
 readback, ЖР-сверка; workflows `1c-e2e-author` / `1c-e2e-run`), данные —
 MCP `1c-db`. Три уровня: логика (execute_code), API (HTTP), GUI (testpilot) —
-все pytest в `tests/e2e/`. Юниты на yAxUnit не пишутся; унаследованные
-Vanessa-фичи лежат в `docs/omp-migrated/tests/` только как источник
-конвертации — исполнять их нельзя.
+все pytest в `tests/e2e/`. Юниты на yAxUnit не пишутся.
 <!-- END 1C CONTOUR -->
