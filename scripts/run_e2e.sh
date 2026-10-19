@@ -149,10 +149,19 @@ if [ -f "$SWEEP" ]; then
 	SRC=$?
 	set -e
 	if [ "$SRC" = "2" ]; then
-		echo "WARN: постпроверка остатков Е2Е-данных недоступна — прокси 1c-db не отвечает" >&2
+		# причина — в машинном JSON свипа (error: client-unavailable | proxy)
+		KIND="$(python3 -c "import json,sys
+try: print(json.load(open(sys.argv[1])).get('error', 'proxy'))
+except Exception: print('proxy')" "$ROOT/test-results/e2e-sweep.json" 2>/dev/null)"
+		if [ "$KIND" = "client-unavailable" ]; then
+			echo "WARN: постпроверка остатков Е2Е-данных недоступна — клиент 1С не подключен к прокси 1c-db" >&2
+		else
+			echo "WARN: постпроверка остатков Е2Е-данных недоступна — прокси 1c-db не отвечает" >&2
+		fi
 	elif [ "$SRC" != "0" ]; then
 		echo "✗ остатки Е2Е-данных после зачистки — см. test-results/e2e-sweep.json:" >&2
-		python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('   было', d['found_before'], '| удалено', d['deleted'], '| осталось', d['found_after'])" "$ROOT/test-results/e2e-sweep.json" >&2
+		python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('   было', d['found_before'], '| удалено', d['deleted'], '| осталось', d['found_after'])" "$ROOT/test-results/e2e-sweep.json" 2>/dev/null >&2 \
+			|| { echo "   файл пуст или некорректен — stderr свипа:" >&2; sed 's/^/   /' "$ROOT/test-results/e2e-sweep.err" >&2; }
 		[ "$RC" = "0" ] && RC=3
 	fi
 fi

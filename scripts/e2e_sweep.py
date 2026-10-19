@@ -17,19 +17,23 @@ run_e2e.sh сам находит остатки по маркеру, удаля�
 
 Режимы:
   (по умолчанию)  только проверка: exit 0 — чисто, 1 — есть остатки,
-                  2 — прокси недоступен/ошибка.
+                  2 — прокси недоступен ИЛИ клиент 1С за ним не подключен.
   --apply         проверка → удаление (до 3 проходов, документы раньше
                   справочников) → повторная проверка: exit 0 — чисто,
-                  3 — остатки после зачистки, 2 — прокси недоступен.
+                  3 — остатки после зачистки, 2 — прокси недоступен или
+                  клиент не подключен.
 
 Опции: --marker S (по умолчанию Е2Е-), --url U (по умолчанию из
 .zcode/1c/contour.json 1c_db.url, иначе http://127.0.0.1:6003/mcp),
---timeout SEC, --json (машинный вывод {found_before, deleted, found_after,
-failed}).
+--timeout SEC (общий бюджет всех вызовов, по умолчанию 120; socket-timeout
+не спасает — прокси в long-poll без клиента капает SSE keep-alive),
+--json (машинный вывод {found_before, deleted, found_after, failed}; при
+недоступности {"error": "client-unavailable"|"proxy", ...}).
 
 Запуск: python3 e2e_sweep.py <project-root> [--apply] [--json]
 """
 import json
+import signal
 import sys
 import urllib.error
 import urllib.request
@@ -38,6 +42,10 @@ from pathlib import Path
 DEFAULT_MARKER = "Е2Е-"
 DEFAULT_URL = "http://127.0.0.1:6003/mcp"
 MAX_PASSES = 3
+
+
+class ClientUnavailable(RuntimeError):
+	"""Прокси отвечает, но клиент 1С за ним не подключен (или молчит весь бюджет)."""
 
 # ── минимальный MCP-клиент (Streamable HTTP, stdlib) ────────────────────────
 
@@ -256,25 +264,45 @@ def proxy_url(root: Path, explicit: str) -> str:
 	return ((data or {}).get("1c_db") or {}).get("url") or DEFAULT_URL
 
 
+def _arm_deadline(seconds: int):
+	"""Общий бюджет на все вызовы: без него long-poll без клиента висит
+	вечно (keep-alive прокси сбрасывают socket-timeout)."""
+	if hasattr(signal, "SIGALRM"):
+		def _bang(signum, frame):
+			raise ClientUnavailable(
+				f"нет ответа за {seconds} с (--timeout)")
+		signal.signal(signal.SIGALRM, _bang)
+		signal.alarm(max(1, seconds))
+
+
+def _need(result, key: str, what: str):
+	"""Ответ execute_code обязан быть JSON-объектом со схемой свипа; без
+	ключа — прокси жив, а клиент 1С за ним не подключен (issue #20)."""
+	if not isinstance(result, dict) or key not in result:
+		raise ClientUnavailable(f"{what}: ответ без {key!r}")
+	return result[key]
+
+
 def sweep(url: str, marker: str, timeout: int, do_apply: bool) -> dict:
 	session = mcp_session(url, timeout)
 	check = json.loads(execute_code(
 		url, session, timeout, CHECK_TMPL.format(marker=marker)))
-	out = {"found_before": check["found"], "deleted": 0,
-	       "found_after": check["found"], "failed": []}
-	if not do_apply or check["found"] == 0:
+	found_before = _need(check, "found", "проверка")
+	out = {"found_before": found_before, "deleted": 0,
+	       "found_after": found_before, "failed": []}
+	if not do_apply or found_before == 0:
 		return out
 	failed: list = []
 	for _ in range(MAX_PASSES):
 		applied = json.loads(execute_code(
 			url, session, timeout, SWEEP_TMPL.format(marker=marker)))
-		out["deleted"] += applied["deleted"]
-		failed = applied["failed"]
-		if not failed or not applied["deleted"]:
+		out["deleted"] += _need(applied, "deleted", "зачистка")
+		failed = applied.get("failed", [])
+		if not failed or not out["deleted"]:
 			break
 	after = json.loads(execute_code(
 		url, session, timeout, CHECK_TMPL.format(marker=marker)))
-	out["found_after"] = after["found"]
+	out["found_after"] = _need(after, "found", "повторная проверка")
 	out["failed"] = failed
 	return out
 
@@ -297,14 +325,27 @@ def main() -> int:
 	root = Path(positional[0]).resolve() if positional else Path.cwd()
 	url = proxy_url(root, url_opt)
 
+	_arm_deadline(timeout)
 	try:
 		out = sweep(url, marker, timeout, do_apply)
+	except ClientUnavailable as e:
+		print(f"✗ клиент 1С не подключен к прокси 1c-db ({url}): {e}",
+		      file=sys.stderr)
+		if as_json:
+			print(json.dumps({"error": "client-unavailable",
+			                  "detail": str(e), "url": url},
+			                 ensure_ascii=False))
+		return 2
 	except (urllib.error.URLError, RuntimeError, OSError) as e:
 		msg = f"✗ прокси 1c-db недоступен ({url}): {e}"
 		print(msg, file=sys.stderr)
 		if as_json:
-			print(json.dumps({"error": str(e), "url": url}, ensure_ascii=False))
+			print(json.dumps({"error": "proxy", "detail": str(e), "url": url},
+			                 ensure_ascii=False))
 		return 2
+	finally:
+		if hasattr(signal, "SIGALRM"):
+			signal.alarm(0)
 
 	if as_json:
 		print(json.dumps(out, ensure_ascii=False))

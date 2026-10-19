@@ -3,12 +3,16 @@
 
 Fake-сервер эмулирует handshake + tools/call execute_code: check возвращает
 зафиксированный список «остатков», apply — удаляет (счётчик) или отказывает
-(маркер с FAIL). Запуск: python3 tests/test_e2e_sweep.py
+(маркер с FAIL); отдельные режимы — «клиент молчит» (SSE keep-alive без
+ответа, бюджет режет по --timeout) и «ответ без схемы found» (прокси жив,
+клиент 1С не подключен — тот самый KeyError из issue #20).
+Запуск: python3 tests/test_e2e_sweep.py
 """
 import json
 import re
 import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,6 +38,8 @@ class FakeProxy(ThreadingHTTPServer):
 		self.clean_after_apply = clean_after_apply
 		self.checks = 0
 		self.deleted_calls = 0
+		self.hang_calls = False
+		self.nokey_calls = False
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -52,6 +58,21 @@ class Handler(BaseHTTPRequestHandler):
 		self.end_headers()
 		self.wfile.write(body)
 
+	def _hang_open(self, req_id):
+		"""Long-poll без клиента: SSE-поток с keep-alive — socket-timeout
+		не срабатывает (прокси капает данными), резать должен общий бюджет."""
+		self.send_response(200)
+		self.send_header("Content-Type", "text/event-stream")
+		self.send_header("Mcp-Session-Id", "fake-session")
+		self.end_headers()
+		try:
+			while True:
+				self.wfile.write(b": keepalive\n\n")
+				self.wfile.flush()
+				time.sleep(0.2)
+		except OSError:
+			pass
+
 	def do_POST(self):
 		req = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
 		method = req.get("method", "")
@@ -61,7 +82,18 @@ class Handler(BaseHTTPRequestHandler):
 		if method.startswith("notifications/"):
 			return self._respond({}, session=None, status=202)
 		if method == "tools/call":
+			if self.server.hang_calls:
+				return self._hang_open(req["id"])
 			code = req["params"]["arguments"]["code"]
+			if self.server.nokey_calls:
+				# клиент заявился и погас: прокси отдаёт ответ тулкита без схемы свипа
+				text = json.dumps({"success": True,
+				                   "data": json.dumps(
+				                       {"error": "клиент не подключен"},
+				                       ensure_ascii=False)},
+				                  ensure_ascii=False)
+				return self._respond({"jsonrpc": "2.0", "id": req["id"], "result": {
+					"content": [{"type": "text", "text": text}]}})
 			if "Удалить" in code:
 				self.server.deleted_calls += 1
 				if self.server.clean_after_apply:
@@ -135,9 +167,36 @@ def main() -> int:
 		srv.clean_after_apply = True
 
 		# ── недоступный прокси → exit 2 ──
-		r = run_sweep("/tmp/nowhere", "--url", "http://127.0.0.1:1/mcp")
+		r = run_sweep("/tmp/nowhere", "--url", "http://127.0.0.1:1/mcp", "--json")
 		check("недоступен: exit 2", r.returncode == 2, r.stdout + r.stderr)
 		check("недоступен: причина в stderr", "недоступен" in r.stderr, r.stderr)
+		data = json.loads(r.stdout.strip().splitlines()[-1])
+		check("недоступен: error=proxy", data.get("error") == "proxy", str(data))
+
+		# ── прокси жив, клиент никогда не подключался: long-poll с keep-alive,
+		#    режет общий бюджет (--timeout), не висит (issue #20) ──
+		srv.hang_calls = True
+		t0 = time.monotonic()
+		r = run_sweep("/tmp/nowhere", "--url", url, "--timeout", "2", "--json")
+		elapsed = time.monotonic() - t0
+		srv.hang_calls = False
+		check("клиент молчит: exit 2 по бюджету", r.returncode == 2, r.stdout + r.stderr)
+		check("клиент молчит: не висит (уложился в 30 с)", elapsed < 30, f"{elapsed:.1f} с")
+		data = json.loads(r.stdout.strip().splitlines()[-1])
+		check("клиент молчит: error=client-unavailable",
+		      data.get("error") == "client-unavailable", str(data))
+		check("клиент молчит: причина в stderr", "не подключен" in r.stderr, r.stderr)
+
+		# ── прокси жив, клиент ответил без схемы found → exit 2, не KeyError ──
+		srv.nokey_calls = True
+		r = run_sweep("/tmp/nowhere", "--url", url, "--json")
+		srv.nokey_calls = False
+		check("ответ без found: exit 2", r.returncode == 2, r.stdout + r.stderr)
+		check("ответ без found: KeyError пойман", "KeyError" not in r.stderr, r.stderr)
+		data = json.loads(r.stdout.strip().splitlines()[-1])
+		check("ответ без found: error=client-unavailable",
+		      data.get("error") == "client-unavailable", str(data))
+		check("ответ без found: причина в stderr", "не подключен" in r.stderr, r.stderr)
 
 	# ── маркер кастомный доходит до запроса (в коде ПОДОБНО с маркером) ──
 	with FakeProxy() as srv:
