@@ -398,8 +398,9 @@ def main() -> int:
 			                    if ln.startswith("path\t")), "ritual")
 			if path_marker == "migrator":
 				fail("обязательная топология неполна: " + ", ".join(missed)
-				     + " — лечение: scripts/migrate_from_omp.py + конвертация "
-				     "покрытия из docs/omp-migrated (канон ишью #16), "
+				     + " — лечение: scripts/migrate_from_omp.py + перенос "
+				     "покрытия по канону скилла 1c-test-contour "
+				     "(архив docs/omp-migrated — только источник), "
 				     "не полный ритуал навыка")
 			else:
 				fail("обязательная топология неполна: " + ", ".join(missed)

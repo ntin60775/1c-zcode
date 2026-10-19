@@ -216,9 +216,9 @@ def migrate_test_stack(root: Path, apply: bool):
 		if src_test:
 			note("расширение юнит-тестов (tests/cfe/Тесты): код не переносится, но "
 			     "ЗАЩИЩАЕМАЯ ЛОГИКА обязана переехать — инварианты модулей → "
-			     "логика-тесты (фикстура onec_db, execute_code; шаблон "
-			     "conftest-e2e.py), пользовательские пути → GUI-e2e "
-			     "(скилл 1c-test-contour, «Три уровня»); после переноса всех "
+			     "юниты tests/unit (фикстура onec_db, execute_code), "
+			     "пользовательские пути → GUI-e2e "
+			     "(скилл 1c-test-contour, «Юниты и e2e»); после переноса всех "
 			     "проверок снеси source-set «Тесты»")
 
 
