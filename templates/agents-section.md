@@ -43,8 +43,9 @@ push; пропуск любого — отклонение от процедур
 
 ### Тесты и данные
 
-Поведение проверяется e2e-тестами, которые агент пишет сам (write-first,
-readback, ЖР-сверка; workflows `1c-e2e-author` / `1c-e2e-run`), данные —
-MCP `1c-db`. Три уровня: логика (execute_code), API (HTTP), GUI (testpilot) —
-все pytest в `tests/e2e/`. Юниты на yAxUnit не пишутся.
+Тесты агент пишет сам, все на pytest: юниты в `tests/unit/`, e2e в
+`tests/e2e/`. Юниты покрывают уровень логики 1С (execute_code);
+e2e — поведение: write-first, readback, ЖР-сверка (workflows
+`1c-e2e-author` / `1c-e2e-run`) на уровнях API (HTTP) и GUI
+(testpilot). Данные — MCP `1c-db`.
 <!-- END 1C CONTOUR -->
