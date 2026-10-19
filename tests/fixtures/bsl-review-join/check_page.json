@@ -1,0 +1,35 @@
+{
+  "ok": true,
+  "summary": "module checked, findings present",
+  "data": {
+    "status": "failed",
+    "validators": ["bsl-analyzer"],
+    "diagnostics": [
+      {
+        "code": "DeprecatedPlatformApi",
+        "message": "Используйте ТекущаяДатаСеанса вместо ТекущаяДата",
+        "location": "main:CommonModule.Продажи.Метод.12"
+      },
+      {
+        "code": "DeprecatedPlatformApi",
+        "message": "Используйте ПодробноеПредставлениеОшибки → ОбработкаОшибок.ПодробноеПредставлениеОшибки",
+        "location": "main:CommonModule.Продажи.Метод.16"
+      },
+      {
+        "code": "StyleElementConstructors",
+        "message": "Используйте элемент стиля вместо „Новый Цвет“",
+        "location": "main:CommonModule.Продажи.Метод.20"
+      },
+      {
+        "code": "LogicalOrInTheWhereSectionOfQuery",
+        "message": "ИЛИ в секции ГДЕ замедляет запрос",
+        "location": "main:CommonModule.Продажи.Метод.24"
+      },
+      {
+        "code": "UnknownDiagnostic",
+        "message": "что-то, чего нет в таблице",
+        "location": "main:CommonModule.Продажи.Метод.28"
+      }
+    ]
+  }
+}

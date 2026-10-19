@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "summary": "page with unread remainder",
+  "data": {
+    "status": "passed",
+    "validators": ["bsl-analyzer"],
+    "diagnostics": [
+      {
+        "code": "CognitiveComplexity",
+        "message": "Когнитивная сложность метода 25",
+        "location": "main:CommonModule.Продажи.Метод.30"
+      }
+    ],
+    "cursor": "eyJvZmZzZXQiOiAyMH0="
+  }
+}
