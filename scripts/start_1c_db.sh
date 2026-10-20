@@ -20,10 +20,18 @@
 #   start_1c_db.sh <project-root> --headless # клиент под Xvfb (среда без GUI)
 #   start_1c_db.sh <project-root> --stop     # погасить клиент и прокси (свои)
 #   start_1c_db.sh <project-root> --proxy-only / --stop-proxy
+#   start_1c_db.sh <project-root> --print-config  # url порт epf mode channel — и выход
 #
 # Конфиг (.zcode/1c/contour.json → "1c_db"):
 #   url      — MCP-endpoint (по умолчанию http://127.0.0.1:6003/mcp)
-#   epf_path — MCP_Toolkit.epf относительно корня (tools/mcp/, в git не кладём)
+#   epf_path — обработка относительно корня (tools/mcp/, в git не кладём).
+#              Не задан — раннер выбирает файл под ОС хоста сам
+#              (v0.4.51, решение владельца после ROCTUP/1c-mcp-toolkit#34):
+#              Linux → MCP_Toolkit_linux.epf, macOS → MCP_Toolkit_macos.epf,
+#              Windows → MCP_Toolkit.epf. Отсутствующий файл доставляется
+#              сам: build/ клона → релиз GitHub того же тега; замена
+#              уже лежащего файла автоматом не делается (доверие
+#              платформы к пути — канон навыка 1c-db-data).
 #   mode     — "proxy" (Linux, по умолчанию) | "embedded" (Windows)
 #   channel  — канал изоляции прокси (опционально, ?channel=)
 #
@@ -42,6 +50,7 @@ for arg in "$@"; do
 	--stop) MODE="stop" ;;
 	--proxy-only) MODE="proxy_only" ;;
 	--stop-proxy) MODE="stop_proxy" ;;
+	--print-config) MODE="print_config" ;;
 	*) [ -z "$ROOT" ] && ROOT="$arg" ;;
 	esac
 done
@@ -69,8 +78,19 @@ done
 read -r URL PORT EPF_REL DBMODE CHANNEL < <(python3 - "$ROOT" <<'PY'
 import json, sys, pathlib
 root = pathlib.Path(sys.argv[1])
-url, epf = "http://127.0.0.1:6003/mcp", "tools/mcp/MCP_Toolkit.epf"
+url = "http://127.0.0.1:6003/mcp"
+# Обработка — под ОС хоста (v0.4.51, ROCTUP/1c-mcp-toolkit#34): на Linux
+# вин-файл грузится, но его Windows-компоненты (QueryLineageAnalyzer и др.)
+# молча отсутствуют. Явный 1c_db.epf_path перекрывает детект.
+EPF_STEM = "tools/mcp/MCP_Toolkit"
+if sys.platform.startswith("linux"):
+    epf = EPF_STEM + "_linux.epf"
+elif sys.platform == "darwin":
+    epf = EPF_STEM + "_macos.epf"
+else:
+    epf = EPF_STEM + ".epf"
 mode = "proxy" if sys.platform.startswith("linux") else "embedded"
+db = {}
 cfg = root / ".zcode" / "1c" / "contour.json"
 try:
     db = json.loads(cfg.read_text(encoding="utf-8")).get("1c_db") or {}
@@ -84,6 +104,11 @@ port = tail.split(":", 1)[1].split("/", 1)[0] if ":" in tail else "6003"
 print(url, port, epf, mode, db.get("channel") or "")
 PY
 )
+
+if [[ $MODE == print_config ]]; then
+	echo "$URL $PORT $EPF_REL $DBMODE $CHANNEL"
+	exit 0
+fi
 
 alive() { curl -so /dev/null --max-time 3 -w '%{http_code}' "$URL" 2>/dev/null | grep -qE '^[1-5]'; }
 
@@ -280,12 +305,49 @@ if curl -so /dev/null --max-time 3 "$URL"; then
 	fi
 fi
 
-# ── обработка ──
+# ── обработка: под ОС хоста, при отсутствии — автодоставка (v0.4.51) ──
+# Источники по канону «пара прокси+epf одного тега»: build/ клона (локальная
+# сборка), затем релиз GitHub того же тега клона. Уже лежащий файл не
+# перезаписываем: замена живой обработки сбрасывает доверие платформы к пути
+# (диалог безопасности, headless-стенд молчит — канон навыка 1c-db-data).
 EPF="$ROOT/$EPF_REL"
 if [[ ! -f "$EPF" ]]; then
-	echo "✗ нет обработки: $EPF_REL" >&2
-	echo "  положи MCP_Toolkit.epf из клона 1c-mcp-toolkit (build/) по этому" >&2
-	echo "  пути или пропиши 1c_db.epf_path в .zcode/1c/contour.json" >&2
+	EPF_NAME="$(basename "$EPF_REL")"
+	SRC="$TOOLKIT/build/$EPF_NAME"
+	if [[ -f "$SRC" ]]; then
+		mkdir -p "$(dirname "$EPF")"
+		cp "$SRC" "$EPF"
+		echo "• обработка скопирована из клона (build/): $EPF_NAME"
+	else
+		TAG="$(git -C "$TOOLKIT" describe --tags --abbrev=0 2>/dev/null || true)"
+		REPO=""
+		if [[ -n "$TAG" ]]; then
+			ORIGIN="$(git -C "$TOOLKIT" remote get-url origin 2>/dev/null || true)"
+			REPO="$(printf '%s' "$ORIGIN" | sed -E 's#.*github\.com[:/]##; s#\.git$##')"
+		fi
+		if [[ -n "$REPO" ]]; then
+			if curl -fsSL --max-time 120 \
+				-o "$EPF.part" \
+				"https://github.com/$REPO/releases/download/$TAG/$EPF_NAME"; then
+				mkdir -p "$(dirname "$EPF")"
+				mv "$EPF.part" "$EPF"
+				echo "• обработка скачана из релиза $REPO@$TAG: $EPF_NAME"
+			else
+				rm -f "$EPF.part"
+			fi
+		fi
+	fi
+fi
+if [[ ! -f "$EPF" ]]; then
+	{
+		echo "✗ нет обработки под эту ОС: $EPF_REL"
+		echo "  раннер ждёт файл под текущую ОС: Linux → MCP_Toolkit_linux.epf,"
+		echo "  Windows → MCP_Toolkit.epf, macOS → MCP_Toolkit_macos.epf;"
+		echo "  источник — build/ клона $TOOLKIT или релиз того же тега"
+		echo "  (github.com/ROCTUP/1c-mcp-toolkit/releases), либо явный"
+		echo "  1c_db.epf_path в .zcode/1c/contour.json"
+	} >&2
+	{ ls "$ROOT/tools/mcp/" 2>/dev/null | sed 's/^/  в tools\/mcp\/: /'; } || true
 	exit 2
 fi
 
