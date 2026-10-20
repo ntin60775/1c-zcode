@@ -19,6 +19,25 @@ contour_common.UNICA_TOOLS_DEFAULT с override из contour.json.
 флаг не сбрасывает. Прямые правки исходников (эскалации unica-source-gate)
 тоже требуют сверки.
 
+План и публикация unica.apply — одна логическая мутация, и флаг тратит
+публикация: preview-звонок (at+ops) сверку требует, но не тратит; звонок
+с executionToken (публикация готового плана) требует и тратит. Цикл
+«сверка → план (в т. ч. со схемной ошибкой) → план → запись» проходит
+на одной сверке.
+
+У unica.run та же пара: прогон с dryRun:true сверку требует, но не тратит;
+исполнение (dryRun:false; отсутствие dryRun считается исполнением —
+fail-closed) требует и тратит. op раннера живёт на верхнем уровне вызова
+(аргументы операции вложены в args) — резолв только с верхнего уровня,
+иначе канонический вызов проходит мимо гейта как «не мутация».
+
+Осмысленность docs-ответа считается по секциям провайдеров: ответ
+содержателен, если хотя бы одна секция имеет status ok с непустыми hits.
+Секции недоступных провайдеров (пустые hits, status unavailable) ответ
+не роняют — на стендах с частично настроенными провайдерами иначе сверка
+невозможна. Ответ вне формы «JSON со списком sections» судится по
+прежним маркерам пустоты.
+
 Состояние (хуки stateless): state/1c/doc-gate/<session_id>.json.
 PostToolUse документационного вызова проставляет verified по результату.
 
@@ -108,15 +127,80 @@ def response_text(tool_response) -> str:
 	return str(tool_response)
 
 
+def _live_section_answers(sections) -> "bool | None":
+	"""Живой провайдер с непустыми хитами; None — секции не распознаны."""
+	saw_sections = False
+	for section in sections:
+		if not isinstance(section, dict):
+			continue
+		saw_sections = True
+		if section.get("status") != "ok":
+			continue
+		hits = section.get("hits")
+		if isinstance(hits, list) and hits:
+			return True
+	return False if saw_sections else None
+
+
+def _sections_meaningful(text: str) -> "bool | None":
+	"""Осмысленность по секциям ответа docs-провайдеров.
+
+	Секции недоступных провайдеров (status unavailable, пустые hits) ответ
+	не роняют, если другой провайдер ответил содержательно. None — форму
+	«JSON со списком sections» распознать не удалось.
+	"""
+	try:
+		payload = json.loads(text)
+	except json.JSONDecodeError:
+		return None
+	if not isinstance(payload, dict):
+		return None
+	for node in (payload, payload.get("data")):
+		if isinstance(node, dict) and isinstance(node.get("sections"), list):
+			return _live_section_answers(node["sections"])
+	return None
+
+
 def docs_result_is_meaningful(text: str) -> bool:
 	"""Непустой результат сверки: есть содержимое, нет признаков пустоты."""
 	if not text.strip():
 		return False
+	by_sections = _sections_meaningful(text)
+	if by_sections is not None:
+		return by_sections
+	# Ответ вне формы «JSON со sections» — прежняя эвристика по маркерам.
 	if re.search(r'"hits"\s*:\s*\[\s*\]', text):
 		return False
 	if re.search(r'"status"\s*:\s*"unavailable"', text):
 		return False
 	return True
+
+
+def apply_is_publication(tool_input: dict) -> bool:
+	"""unica.apply с executionToken и без ops — публикация готового плана.
+
+	Флаг сверки тратит публикация: preview (at+ops) сверку требует, но не
+	тратит, иначе исполнение по токену блокируется собственным планом.
+	"""
+	args = tool_input.get("args") if isinstance(tool_input.get("args"), dict) else tool_input
+	return bool(args.get("executionToken")) and not args.get("ops")
+
+
+def run_op(tool_input: dict) -> str:
+	"""op раннера: на верхнем уровне вызова, не во вложенных args операции.
+
+	Вложенные args — аргументы операции (контракт unica 0.13); op и dryRun
+	живут рядом с ними. Резолв с верхнего уровня с фолбэком на вложенные,
+	иначе канонический вызов классифицируется как «не мутация».
+	"""
+	args = tool_input.get("args") if isinstance(tool_input.get("args"), dict) else {}
+	return str(tool_input.get("op") or tool_input.get("operation")
+			   or args.get("op") or args.get("operation") or "")
+
+
+def run_is_execution(tool_input: dict) -> bool:
+	"""unica.run — исполнение, если dryRun явно не true (fail-closed)."""
+	return tool_input.get("dryRun") is not True
 
 
 # ── классификация мутаций (0.13) ─────────────────────────────────────────────
@@ -141,8 +225,7 @@ def is_structural_mutation(short: str, tool_input: dict, verify_ops: set) -> boo
 			return not all(CODE_OP_RE.match(op_name(entry)) for entry in ops)
 		return True
 	if short == "run":
-		op = str(args.get("op") or args.get("operation") or "")
-		return op in verify_ops
+		return run_op(tool_input) in verify_ops
 	return True
 
 
@@ -177,13 +260,15 @@ def handle_pre(event: dict) -> int:
 		is_mutation = short in mutation_tools
 		# unica.run без мутабельного op (make/launch/dump-preview) — не мутация
 		if is_mutation and short in set(tools.get("op_tools") or []):
-			args = tool_input.get("args") if isinstance(tool_input.get("args"), dict) else tool_input
-			op = str(args.get("op") or args.get("operation") or "")
-			is_mutation = op in verify_ops
+			is_mutation = run_op(tool_input) in verify_ops
 		if not is_mutation:
 			return 0
 
 		if state.get("verified"):
+			if short == "apply" and not apply_is_publication(tool_input):
+				return 0  # preview плана: сверку потратит публикация
+			if short == "run" and not run_is_execution(tool_input):
+				return 0  # dryRun-прогон: сверку потратит исполнение
 			if is_structural_mutation(short, tool_input, verify_ops):
 				state["verified"] = False  # структурное решение израсходовало сверку
 				save_state(sid, state)

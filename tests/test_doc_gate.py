@@ -5,8 +5,15 @@
 unica.search; мутации — unica.apply (код/структура) и unica.run {op: push|
 upload|apply|reset}; серия правок кода (ops code.*) флаг не сбрасывает.
 
+Семантика учёта (issue #32): флаг тратит публикация — unica.apply с
+executionToken и unica.run с исполнением (dryRun не true); preview-план
+(at+ops) и dryRun-прогон сверку требуют, но не тратят. Осмысленность
+docs-ответа считается по секциям провайдеров: недоступные секции живой
+ответ не роняют.
+
 Запуск: python3 tests/test_doc_gate.py
 """
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -16,6 +23,20 @@ from _lib import audit_entries, check, run_hook, summary  # noqa: E402
 
 DOCS_OK_RESPONSE = {"content": [{"type": "text", "text": '{"results": [{"id": "doc-1", "title": "Хеширование"}]}'}]}
 DOCS_EMPTY_RESPONSE = {"content": [{"type": "text", "text": '{"hits": []}'}]}
+SEARCH_EMPTY_RESPONSE = {"content": [{"type": "text", "text": '{"matches": []}'}]}
+
+DOCS_SECTIONS_MIXED = {"content": [{"type": "text", "text": json.dumps({"sections": [
+	{"provider": "platform-syntax-help", "status": "unavailable", "hits": []},
+	{"provider": "kb-1ci", "status": "ok", "hits": [{"id": "doc-1"}]},
+]})}]}
+DOCS_SECTIONS_DEAD = {"content": [{"type": "text", "text": json.dumps({"sections": [
+	{"provider": "platform-syntax-help", "status": "unavailable", "hits": []},
+	{"provider": "kb-administrator-guide", "status": "unavailable", "hits": []},
+]})}]}
+DOCS_SECTIONS_WRAPPED = {"content": [{"type": "text", "text": json.dumps({"data": {"sections": [
+	{"provider": "platform-syntax-help", "status": "unavailable", "hits": []},
+	{"provider": "v8std", "status": "ok", "hits": [{"id": "std-1"}]},
+]}})}]}
 
 
 def main() -> int:
@@ -43,8 +64,19 @@ def main() -> int:
 			pre("mcp__unica__docs", {"query": query}, sid=sid)
 			return post("mcp__unica__docs", {"query": query}, response, sid=sid, is_error=is_error)
 
+		def code_edit(sid="s1"):
+			return pre("mcp__unica__apply",
+			           {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]}, sid=sid)
+
+		def plan(sid="s1"):
+			return pre("mcp__unica__apply",
+			           {"ops": [{"op": "meta.addAttribute", "object": "Документ.З"}]}, sid=sid)
+
+		def publish(token, sid="s1"):
+			return pre("mcp__unica__apply", {"executionToken": token}, sid=sid)
+
 		# ── мутация без сверки блокируется ──
-		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]})
+		r = code_edit()
 		check("unica.apply без сверки блокируется", r.returncode == 2, f"exit {r.returncode}")
 		check("причина называет unica.docs", "unica.docs" in r.stderr, r.stderr[:160])
 		check("блок в журнале", any(e.get("rule") == "docs-before-design"
@@ -58,37 +90,45 @@ def main() -> int:
 
 		# ── view не сверка; search — сверка ──
 		post("mcp__unica__view", {"path": "src/cf"}, {"content": [{"type": "text", "text": "…"}]})
-		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]})
+		r = code_edit()
 		check("unica.view не засчитывается как сверка", r.returncode == 2, f"exit {r.returncode}")
 
 		# ── пустой результат docs — не сверка; непустой — сверка ──
 		docs("ХешФормат", DOCS_EMPTY_RESPONSE)
-		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]})
+		r = code_edit()
 		check("пустой результат поиска — не сверка", r.returncode == 2, f"exit {r.returncode}")
 		docs("ХешФормат")
-		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]})
+		r = code_edit()
 		check("после непустой сверки apply проходит", r.returncode == 0, f"exit {r.returncode}")
 
 		# ── серия правок кода (ops code.*) флаг не сбрасывает ──
 		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "Y", "code": "…"}]})
 		check("вторая правка кода в серии проходит", r.returncode == 0, f"exit {r.returncode}")
 
-		# ── структурная мутация израсходовала сверку ──
-		r = pre("mcp__unica__apply", {"ops": [{"op": "meta.addAttribute", "object": "Документ.З"}]})
-		check("структурная мутация проходит (сверка была)", r.returncode == 0, f"exit {r.returncode}")
-		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]})
-		check("после структурной мутации флаг сброшен", r.returncode == 2, f"exit {r.returncode}")
+		# ── план сверку требует, но не тратит; тратит публикация ──
+		r = plan()
+		check("preview-план проходит со сверкой", r.returncode == 0, f"exit {r.returncode}")
+		r = code_edit()
+		check("preview-план не израсходовал сверку", r.returncode == 0, f"exit {r.returncode}")
+		r = plan()
+		check("ретрай плана после схемной ошибки — на той же сверке", r.returncode == 0, f"exit {r.returncode}")
+		r = publish("tok-1")
+		check("публикация по executionToken проходит", r.returncode == 0, f"exit {r.returncode}")
+		r = code_edit()
+		check("публикация израсходовала сверку", r.returncode == 2, f"exit {r.returncode}")
+		r = publish("tok-2")
+		check("публикация без свежей сверки блокируется", r.returncode == 2, f"exit {r.returncode}")
 
-		# ── run push — структурная: сбрасывает флаг ──
+		# ── run push — исполнение: требует и тратит флаг ──
 		docs("модули")
 		r = pre("mcp__unica__run", {"args": {"op": "push", "force": True, "sourceSet": "main"}})
 		check("run push со сверкой проходит", r.returncode == 0, f"exit {r.returncode}")
-		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]})
+		r = code_edit()
 		check("run push сбросил флаг сверки", r.returncode == 2, f"exit {r.returncode}")
 
 		# ── ошибка docs-вызова — не сверка ──
 		docs("упавший", DOCS_OK_RESPONSE, is_error=True)
-		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]})
+		r = code_edit()
 		check("упавший docs-вызов не сверка", r.returncode == 2, f"exit {r.returncode}")
 
 		# ── прямая правка исходника (эскалация) требует сверку ──
@@ -107,10 +147,15 @@ def main() -> int:
 		check("plugin-обёртка: apply со сверкой проходит", r.returncode == 0, f"exit {r.returncode}")
 		r = pre("mcp__plugin_unica_unica__unica.apply",
 		        {"ops": [{"op": "meta.addAttribute", "object": "Справочник.X"}]})
-		check("plugin-обёртка: структурная мутация прошла", r.returncode == 0, f"exit {r.returncode}")
+		check("plugin-обёртка: preview-план прошёл", r.returncode == 0, f"exit {r.returncode}")
 		r = pre("mcp__plugin_unica_unica__unica.apply",
 		        {"ops": [{"op": "code.replace", "anchor": "Z", "code": "…"}]})
-		check("plugin-обёртка: флаг сброшен структурной", r.returncode == 2, f"exit {r.returncode}")
+		check("plugin-обёртка: preview не израсходовал сверку", r.returncode == 0, f"exit {r.returncode}")
+		r = pre("mcp__plugin_unica_unica__unica.apply", {"executionToken": "tok-p"})
+		check("plugin-обёртка: публикация прошла", r.returncode == 0, f"exit {r.returncode}")
+		r = pre("mcp__plugin_unica_unica__unica.apply",
+		        {"ops": [{"op": "code.replace", "anchor": "Z", "code": "…"}]})
+		check("plugin-обёртка: публикация сбросила флаг", r.returncode == 2, f"exit {r.returncode}")
 
 		# ── живая подчёркнутая форма: mcp__plugin_unica_unica__unica_run ──
 		docs("подчёркнутая форма")
@@ -121,8 +166,39 @@ def main() -> int:
 		        {"args": {"op": "push", "force": True, "sourceSet": "main"}})
 		check("unica_run: push без свежей сверки блокируется", r.returncode == 2, f"exit {r.returncode}")
 
+		# ── каноническая форма run: op на верхнем уровне (обход закрыт) ──
+		r = pre("mcp__unica__run", {"op": "push", "args": {"sourceSet": "main"}, "dryRun": False})
+		check("канонический run push без сверки блокируется", r.returncode == 2, f"exit {r.returncode}")
+		docs("загрузка расширения")
+		r = pre("mcp__unica__run", {"op": "push", "args": {"sourceSet": "main"}, "dryRun": True})
+		check("run dryRun:true проходит со сверкой", r.returncode == 0, f"exit {r.returncode}")
+		r = pre("mcp__unica__run", {"op": "push", "args": {"sourceSet": "main"}, "dryRun": True})
+		check("повторный dryRun:true — на той же сверке", r.returncode == 0, f"exit {r.returncode}")
+		r = pre("mcp__unica__run", {"op": "push", "args": {"sourceSet": "main"}, "dryRun": False})
+		check("исполнение run dryRun:false проходит", r.returncode == 0, f"exit {r.returncode}")
+		r = pre("mcp__unica__run", {"op": "push", "args": {"sourceSet": "main"}})
+		check("исполнение run без dryRun израсходовало сверку", r.returncode == 2, f"exit {r.returncode}")
+		r = pre("mcp__unica__run", {"op": "reset", "args": {}, "dryRun": True})
+		check("dryRun без свежей сверки блокируется", r.returncode == 2, f"exit {r.returncode}")
+
+		# ── секции провайдеров: недоступные не роняют живой ответ ──
+		docs("секции", DOCS_SECTIONS_MIXED)
+		r = code_edit()
+		check("живая секция при мёртвых — сверка зачтена", r.returncode == 0, f"exit {r.returncode}")
+		publish("tok-3")
+		docs("секции", DOCS_SECTIONS_DEAD)
+		r = code_edit()
+		check("все секции недоступны — не сверка", r.returncode == 2, f"exit {r.returncode}")
+		post("mcp__unica__search", {"query": "динсписок"}, SEARCH_EMPTY_RESPONSE)
+		r = code_edit()
+		check("пустой unica.search сознательно зачтён", r.returncode == 0, f"exit {r.returncode}")
+		publish("tok-4")
+		docs("секции в data", DOCS_SECTIONS_WRAPPED)
+		r = code_edit()
+		check("секции внутри data тоже разобраны", r.returncode == 0, f"exit {r.returncode}")
+
 		# ── состояние сессионно: другая сессия не наследует сверку ──
-		r = pre("mcp__unica__apply", {"ops": [{"op": "code.replace", "anchor": "X", "code": "…"}]}, sid="s2")
+		r = code_edit(sid="s2")
 		check("другая сессия начинает без сверки", r.returncode == 2, f"exit {r.returncode}")
 
 		# ── неразборчивый вход проходит молча ──
