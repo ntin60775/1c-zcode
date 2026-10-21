@@ -1,0 +1,59 @@
+[project]
+name = "kd-rules-mcp"
+version = "1.3.0"
+description = "MCP-сервер правил обмена «Конвертации данных 2» (1С): разбор, сопоставление, правка и проверка"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["1c", "1с", "mcp", "конвертация данных", "exchange rules", "bsp"]
+requires-python = ">=3.12"
+dependencies = [
+    "lxml>=6.1.3",
+    "mcp>=2.2.0",
+    "pyyaml>=6.0.2",
+]
+
+[project.scripts]
+kd-rules-mcp = "kd_rules_mcp:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# Скиллы — тексты и служебные скрипты для агентов, не код сервера.
+extend-exclude = ["reference", "base", "structures", ".claude/skills", ".cursor/skills"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+# Комментарии, docstring и строки с именами 1С пишутся кириллицей — это не «похожие символы».
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "standard"
+# docs/plans — история: пробные скрипты не переписываются вместе с пакетом.
+exclude = ["reference", "base", "structures", "docs/plans", "**/__pycache__", ".venv"]
+venvPath = "."
+venv = ".venv"
+# Скрипты scripts/ и kdbase/ импортируются тестами как модули.
+extraPaths = ["scripts", "kdbase"]
+
+[dependency-groups]
+dev = [
+    "lxml-stubs>=0.5.1",
+    "pytest>=9.1.1",
+    "pywin32>=311 ; sys_platform == 'win32'",
+    "types-pyyaml>=6.0.12",
+]
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "corpus: тесты на корпусе макетов правил из выгрузок конфигураций в KD2_CORPUS_DIRS (без переменной пропускаются)",
+    "deploy: проверка развёрнутого контейнера по KD2_DEPLOY_URL (без переменной тесты пропускаются)",
+    "kdbase: сверка через базы 1С (только с KD2_KDBASE_CHECK=1)",
+    "slow: тест дольше 20 с после общего кэша входов; полный прогон его выполняет, быстрый — pytest -m \"not slow\"",
+]

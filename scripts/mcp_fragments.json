@@ -15,5 +15,9 @@
 	"1c-db": {
 		"type": "http",
 		"url": "{{1c_db_url}}"
+	},
+	"1c-kd": {
+		"type": "http",
+		"url": "{{kd_url}}"
 	}
 }

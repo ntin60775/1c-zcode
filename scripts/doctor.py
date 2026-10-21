@@ -8,9 +8,11 @@
       предупреждение). Сервер стартует и без артефактов — ping этот провал
       не видит, он всплывает provider_unavailable'ом (скилл
       1c-unica-artifacts).
-  2. 1c-testpilot в PATH + окружение e2e-прогонов (pytest в venv); API-публикация (ibsrv):
-     env > contour.json (1c.testpilot.python, 1c.publish.ibsrv — в т.ч. режим
-     'distrobox:<имя>'/'distrobox:auto') > детект.
+  2. 1c-testpilot в PATH + окружение e2e-прогонов (pytest в venv).
+  2b. API-публикация (ibsrv): env > contour.json (1c.publish.ibsrv —
+      в т.ч. режим 'distrobox:<имя>'/'distrobox:auto') > детект.
+  2c. kd-rules-mcp (станция 1c-kd, правила обмена КД) — мягкая зависимость:
+      станции нет → WARN, есть но не жива → WARN, жива → OK.
   3. Проектные файлы контура: v8project.yaml (платформа — local-оверлей,
      v8project.yaml, 1c.platform.path из contour.json), .zcode/config.json
      (разводка через wire_config --check), .zcode/1c/contour.json, profiles.yaml.
@@ -33,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -47,7 +50,8 @@ from contour_common import contour_config
 
 UNICA_MIN = "0.13.0"
 CONTOUR_SKILLS = {"1c-contour", "1c-test-contour", "1c-testpilot", "1c-db-data",
-                  "1c-project-bootstrap", "1c-project-layout", "1c-ibsrv-publish", "bsp"}
+                  "1c-project-bootstrap", "1c-project-layout", "1c-ibsrv-publish", "bsp",
+                  "1c-kd-rules", "kd2-rules-build", "kd2-exchange-pitfalls", "kd3-rules"}
 USER_SKILL_ROOTS = (Path.home() / ".zcode" / "skills", Path.home() / ".agents" / "skills")
 
 
@@ -436,7 +440,6 @@ def main() -> int:
 	# 1c-db жив? (нужен клиент 1С с открытой MCP_Toolkit.epf)
 	db_url = (contour.get("1c_db") or {}).get("url")
 	if db_url:
-		import urllib.error, urllib.request
 		try:
 			urllib.request.urlopen(db_url, timeout=3)
 			ok(f"1c-db отвечает: {db_url}")
@@ -450,6 +453,30 @@ def main() -> int:
 			warn(f"1c-db не отвечает ({db_url}) — подними: bash "
 			     ".zcode/1c/scripts/start_1c_db.sh . (Linux: сам поднимет "
 			     "прокси и клиент с mode=proxy; install_1c_mcp_proxy.sh один раз)")
+
+	# ── 2c. kd-rules-mcp (станция 1c-kd; мягкая зависимость) ──
+	# Сервер правил обмена КД: станция на машине + живой HTTP на 1c_kd.url.
+	# Нет станции — WARN (нужна только задачам по правилам обмена), не FAIL.
+	kd_station = Path(os.environ.get("KD_RULES_STATION")
+	                  or Path.home() / ".local" / "share" / "1c-zcode" / "kd-rules-mcp")
+	kd_url = (contour.get("1c_kd") or {}).get("url") or "http://127.0.0.1:8060/mcp"
+	if not (kd_station / "pyproject.toml").is_file():
+		warn(f"kd-rules-mcp: станция не установлена ({kd_station}) — правила "
+		     "обмена КД недоступны; scripts/install_kd_rules.sh")
+	else:
+		try:
+			with urllib.request.urlopen(kd_url, timeout=3):
+				ok(f"1c-kd отвечает: {kd_url}")
+		except urllib.error.HTTPError as e:
+			# 406 — норма для MCP Streamable HTTP на голом GET (нет Accept)
+			if e.code == 406:
+				ok(f"1c-kd отвечает (406 на GET без Accept — норма): {kd_url}")
+			else:
+				ok(f"1c-kd отвечает (HTTP {e.code}): {kd_url}")
+		except Exception:
+			warn(f"kd-rules-mcp: станция есть, сервер не отвечает ({kd_url}) — "
+			     f"подними: bash .zcode/1c/scripts/start_kd_rules.sh "
+			     f"(лог: {kd_station / 'kd-rules.log'})")
 
 	# ── 4. Стайл-чекер ──
 	style_paths = (

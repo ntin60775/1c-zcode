@@ -39,6 +39,22 @@
       "to": ".zcode/skills/1c-project-layout"
     },
     {
+      "from": "skills/1c-kd-rules",
+      "to": ".zcode/skills/1c-kd-rules"
+    },
+    {
+      "from": "skills/kd2-rules-build",
+      "to": ".zcode/skills/kd2-rules-build"
+    },
+    {
+      "from": "skills/kd2-exchange-pitfalls",
+      "to": ".zcode/skills/kd2-exchange-pitfalls"
+    },
+    {
+      "from": "skills/kd3-rules",
+      "to": ".zcode/skills/kd3-rules"
+    },
+    {
       "from": "skills/1c-bsl-review-standards",
       "to": ".zcode/skills/1c-bsl-review-standards"
     },
@@ -71,7 +87,7 @@
       "if_exists": ".zcode/1c/scripts/wire_config.py"
     },
     {
-      "say": "Перезапусти сессию ZCode: hooks и MCP серверы (1c-testpilot, 1c-db) подключаются на старте. Затем /1c-doctor — он проверяет и живость unica MCP (unica_ping: handshake + tools/list)."
+      "say": "Перезапусти сессию ZCode: hooks и MCP серверы (1c-testpilot, 1c-db, 1c-kd) подключаются на старте. Затем /1c-doctor — он проверяет и живость unica MCP (unica_ping: handshake + tools/list). MCP 1c-kd (правила обмена КД): станция ставится .zcode/1c/scripts/install_kd_rules.sh, сервер поднимает start_kd_rules.sh."
     }
   ]
 }

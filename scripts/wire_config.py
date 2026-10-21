@@ -9,9 +9,10 @@
    пути относительно корня проекта) и ставит hooks.enabled = true. Наши
    предыдущие записи (args содержат .zcode/hooks/) заменяются, чужие
    hook-записи не трогаются.
-2. mcp: вливает фрагменты из scripts/mcp_fragments.json (шаблоны 1c-testpilot
-   и 1c-db) в mcp.servers, подставляя url toolkit из .zcode/1c/contour.json
-   (по умолчанию http://127.0.0.1:6003/mcp).
+2. mcp: вливает фрагменты из scripts/mcp_fragments.json (шаблоны 1c-testpilot,
+   1c-db и 1c-kd) в mcp.servers, подставляя url из .zcode/1c/contour.json
+   (1c_db.url → {{1c_db_url}}, 1c_kd.url → {{kd_url}}; умолчания —
+   DEFAULT_*_URL ниже).
 
 Работает из обеих раскладок: в репо плагина (hooks/hooks.json, scripts/)
 и вендоренно в проекте (.zcode/hooks/hooks.json, .zcode/1c/scripts/) —
@@ -36,6 +37,12 @@ from pathlib import Path
 CONFIG = ".zcode/config.json"
 CONTOUR = ".zcode/1c/contour.json"
 DEFAULT_DB_URL = "http://127.0.0.1:6003/mcp"
+DEFAULT_KD_URL = "http://127.0.0.1:8060/mcp"
+# Шаблон url во фрагменте → (ключ contour.json, умолчание)
+URL_TEMPLATES = {
+	"{{1c_db_url}}": ("1c_db", DEFAULT_DB_URL),
+	"{{kd_url}}": ("1c_kd", DEFAULT_KD_URL),
+}
 HOOK_EVENTS = ("PreToolUse", "PostToolUse", "PostToolUseFailure", "SessionStart",
                "UserPromptSubmit", "PermissionRequest", "Stop")
 
@@ -58,6 +65,7 @@ def scaffold_contour(root: Path) -> dict:
 	"""Каркас env-настроек по факту машины; что не нашли — ключ не пишем."""
 	scaffold = {
 		"1c_db": {"url": DEFAULT_DB_URL},
+		"1c_kd": {"url": DEFAULT_KD_URL},
 		"1c": {
 			# ibsrv всегда живёт в distrobox-контейнере (на хосте его нет):
 			# auto — искать по живым контейнерам при публикации
@@ -170,12 +178,15 @@ def merge_mcp(config: dict, root: Path, plugin_root: Path) -> None:
 	fragments = load_json(plugin_root / "scripts" / "mcp_fragments.json", {})
 	if not isinstance(fragments, dict) or not fragments:
 		return
-	url = (contour_of(root).get("1c_db") or {}).get("url") or DEFAULT_DB_URL
+	contour = contour_of(root)
 	servers = config.setdefault("mcp", {}).setdefault("servers", {})
 	for name, fragment in fragments.items():
 		server = json.loads(json.dumps(fragment))  # копия шаблона
-		if isinstance(server, dict) and server.get("url") == "{{1c_db_url}}":
-			server["url"] = url
+		if isinstance(server, dict):
+			templ = server.get("url")
+			if templ in URL_TEMPLATES:
+				key, default = URL_TEMPLATES[templ]
+				server["url"] = (contour.get(key) or {}).get("url") or default
 		servers[name] = server
 
 

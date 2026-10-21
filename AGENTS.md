@@ -41,11 +41,14 @@ docs/MIGRATION-FROM-OMP.md.
 
 ```bash
 # 1. Ни одного имени чужого проекта, базы, учётки или объекта.
-#    Сами имена — в .forbidden-names.txt (gitignored, одна строка = grep-паттерн):
+#    Сами имена — в .forbidden-names.txt (gitignored, одна строка = grep-паттерн).
+#    vendor/ исключён: там текст апстрима (минимальный diff, не наш авторский
+#    слой; нарицательные слова апстрима дают ложные срабатывания). Гигиена
+#    vendor/ — «нет правок вендора», по vendor/*/UPSTREAM.md.
 PAT=$(cat .forbidden-names.txt 2>/dev/null)
 [ -z "$PAT" ] && echo 'НЕТ .forbidden-names.txt — заведи его, проверка не выполнена' \
   || (grep -rnE "$PAT" --include='*.md' --include='*.py' --include='*.json' . \
-        --exclude-dir=.git --exclude='.forbidden-names.txt' \
+        --exclude-dir=.git --exclude-dir=vendor --exclude='.forbidden-names.txt' \
       && echo 'НАЙДЕНО — править' || echo 'чисто')
 
 # 2. Все гейты и разводка: тесты гоняют хуки как процессы (stdin → exit)
@@ -64,5 +67,8 @@ python3 scripts/lint_skill_frontmatter.py
 - `../1c-bsl-code-style` — пак стиля (deploy.json там же, вендорится рядом).
 - Зеркало `1c-ssl-skills` (БСП) — отдельный репо; минимальный diff над
   апстримом (процедура синка — UPSTREAM.md там).
+- `vendor/kd-rules-mcp` — вендор-копия апстрима egordoronchenko/kd-rules-mcp
+  (MIT, канал правил обмена КД, docs/KD-RULES.md): правки вендор-кода
+  запрещены, синк и пин — UPSTREAM.md там; в проекты не маппится.
 - sot-zcode-marketplace — каталог: тег → пин → `validate --fetch` →
   `deploy-plugin.py install/check/remove`.

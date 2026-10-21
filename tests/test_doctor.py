@@ -91,6 +91,20 @@ def main() -> int:
 		check("python3 перед bash-скриптом не советуется",
 		      "python3 .zcode/1c/scripts/start_1c_db.sh" not in r.stdout, r.stdout[:400])
 
+		# ── 2c. kd-rules-mcp: мягкая зависимость (WARN, не FAIL) ──
+		scaffold(root, "{}")
+		r = run_doctor(root, {"KD_RULES_STATION": str(Path(tmp) / "нет-станции")})
+		check("kd: станции нет — WARN с install-подсказкой",
+		      "станция не установлена" in r.stdout and "install_kd_rules.sh" in r.stdout,
+		      r.stdout[:600])
+		fake_station = Path(tmp) / "kd-station"
+		fake_station.mkdir()
+		(fake_station / "pyproject.toml").write_text("[project]\nname = 'kd'\n", encoding="utf-8")
+		r = run_doctor(root, {"KD_RULES_STATION": str(fake_station)})
+		check("kd: станция есть, сервер молчит — WARN со start-подсказкой",
+		      "сервер не отвечает" in r.stdout and "start_kd_rules.sh" in r.stdout,
+		      r.stdout[:600])
+
 		# ── 3b. обязательный минимум топологии (зовёт scaffold check) ──
 		r = run_doctor(root)
 		check("неполный минимум — FAIL с перечнем",

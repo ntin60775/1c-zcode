@@ -1,0 +1,30 @@
+"""Чистое ядро авторинга прямых ПКС шапки EnterpriseData."""
+
+from .candidates import Candidate as Candidate
+from .candidates import candidates as candidates
+from .canonical import canonicalize_operations as canonicalize_operations
+from .hook import generate_hook as generate_hook
+from .identity import IdentityMap as IdentityMap
+from .identity import artifact_uuid as artifact_uuid
+from .identity import identity_map_from_xml as identity_map_from_xml
+from .instruction import render_instruction as render_instruction
+from .manifest import ArtifactManifest as ArtifactManifest
+from .model import AddHeaderProperty as AddHeaderProperty
+from .model import AttributeDraft as AttributeDraft
+from .model import AuthoringInputs as AuthoringInputs
+from .model import AuthoringPreconditionError as AuthoringPreconditionError
+from .model import AuthoringTarget as AuthoringTarget
+from .model import ExtensionIdentity as ExtensionIdentity
+from .model import Failure as Failure
+from .model import GeneratedHook as GeneratedHook
+from .model import MetadataProfile as MetadataProfile
+from .model import Notice as Notice
+from .model import PreparedAuthoring as PreparedAuthoring
+from .model import Projection as Projection
+from .model import SourceSet as SourceSet
+from .operations import apply_header_properties as apply_header_properties
+from .operations import copy_structure_with_attributes as copy_structure_with_attributes
+from .operations import validate_preconditions as validate_preconditions
+from .render import RenderedAuthoring as RenderedAuthoring
+from .render import render_authoring as render_authoring
+from .xml_dump import dump_extension as dump_extension

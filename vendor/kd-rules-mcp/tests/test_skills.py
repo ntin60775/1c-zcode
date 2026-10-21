@@ -1,0 +1,146 @@
+"""Скиллы сервера: один источник в `.claude/skills`, без копий для клиентов; справочники на месте;
+тексты, которые работают в папке проекта 1С, не ссылаются на этот репозиторий."""
+
+import re
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import build_packs  # noqa: E402 — скрипт из scripts/, не пакет
+import our_skills  # noqa: E402 — скрипт из scripts/, не пакет
+
+SKILLS_DIR = ROOT / ".claude" / "skills"
+SKILLS = sorted(path.name for path in our_skills.our_skills(SKILLS_DIR))
+REFERENCE = re.compile(r"`(references/[^`]+\.md)`")
+OTHER_SKILL_REFERENCE = re.compile(rf"`({our_skills.SKILL_NAME}/references/[^`]+\.md)`")
+MARKDOWN_LINK = re.compile(r"\]\(([^)\s]+)\)")
+
+
+def _texts(skill: str) -> dict[Path, str]:
+    return {
+        path: path.read_bytes().decode("utf-8")
+        for path in sorted((SKILLS_DIR / skill).rglob("*.md"))
+    }
+
+
+def test_skills_found() -> None:
+    assert SKILLS
+    assert set(SKILLS) == {
+        path.name
+        for path in SKILLS_DIR.iterdir()
+        if path.is_dir() and our_skills.is_our_skill(path.name)
+    }
+    for foreign in ("other-tool-skill", "review-helper", "kdx-rules", "kd2", "kd-"):
+        assert not our_skills.is_our_skill(foreign)
+    assert our_skills.is_our_skill("kd2-rules-build")
+    assert our_skills.is_our_skill("kd-install")
+    assert our_skills.is_our_skill("kd3-rules")
+
+
+def test_no_client_copies() -> None:
+    """Cursor и OpenCode читают `.claude/skills` сами: вторая копия дала бы каждый скилл дважды."""
+    copies = [
+        path.relative_to(ROOT).as_posix()
+        for folder in (ROOT / ".cursor" / "skills", ROOT / ".agents" / "skills")
+        for path in our_skills.our_skills(folder)
+    ]
+    assert copies == [], "Копии скиллов вне .claude/skills — источник один"
+    assert not (ROOT / ".cursor" / "rules" / "mcp-1c.mdc").exists(), (
+        "Правило серверов 1С — docs/rules/mcp-1c.md и его копия в скилле, без .mdc"
+    )
+
+
+@pytest.mark.parametrize("skill", SKILLS)
+def test_references_are_linked(skill: str) -> None:
+    folder = SKILLS_DIR / skill
+    text = (folder / "SKILL.md").read_text(encoding="utf-8")
+    linked = set(REFERENCE.findall(text))
+    present = {path.relative_to(folder).as_posix() for path in folder.glob("references/*.md")}
+    assert sorted(linked - present) == [], "SKILL.md ссылается на несуществующие справочники"
+    assert sorted(present - linked) == [], "Справочник не упомянут в SKILL.md"
+
+
+@pytest.mark.parametrize("skill", SKILLS)
+def test_cross_skill_references_exist(skill: str) -> None:
+    """Ссылка `…/references/….md` на соседний скилл сервера — существующий файл."""
+    missing = sorted(
+        {
+            f"{path.name}: {name}"
+            for path, text in _texts(skill).items()
+            for name in OTHER_SKILL_REFERENCE.findall(text)
+            if not (SKILLS_DIR / name).is_file()
+        }
+    )
+    assert missing == []
+
+
+@pytest.mark.parametrize("skill", SKILLS)
+def test_relative_links_stay_in_skills(skill: str) -> None:
+    """Относительные ссылки разрешаются внутри скиллов — в чужом проекте другого нет."""
+    broken: list[str] = []
+    for path, text in _texts(skill).items():
+        for target in MARKDOWN_LINK.findall(text):
+            if "://" in target or target.startswith(("#", "mailto:")):
+                continue
+            resolved = (path.parent / target.partition("#")[0]).resolve()
+            if not resolved.is_relative_to(SKILLS_DIR) or not resolved.exists():
+                broken.append(f"{path.relative_to(SKILLS_DIR).as_posix()}: {target}")
+    assert broken == []
+
+
+def test_skill_texts_are_portable() -> None:
+    """В `kd2-rules-build` и `kd2-exchange-pitfalls` нет путей этого репозитория (`setup_local.py`,
+    `scripts/`, `workspace/`, `docs/`, `src/kd_rules_mcp`), а скрипты `kdbase` — с оговоркой
+    «из клона сервера»: в чужом проекте репозитория нет."""
+    assert build_packs.portability_hits(build_packs.pack_files("claude")) == []
+
+
+# Бюджет SKILL.md в байтах UTF-8: клиент кладёт файл в контекст целиком при срабатывании скилла,
+# подробности живут в `references/`. Своё число на каждый скилл сервера; новый скилл без строки
+# здесь тест не пропустит. Точного счётчика токенов Claude офлайн нет: оценка `len(text) / 3`
+# (символов на токен для кириллицы) — только в сообщении об ошибке, не в условии.
+SKILL_MD_BUDGET_BYTES: dict[str, int] = {
+    "kd-install": 9_000,
+    "kd2-rules-build": 9_000,
+    "kd2-exchange-pitfalls": 7_000,
+    "kd3-rules": 9_000,
+}
+DESCRIPTION_LIMIT = 400
+DESCRIPTION = re.compile(r"^description:\s*(.+)$", re.MULTILINE)
+
+
+def _token_estimate(text: str) -> int:
+    """Грубая оценка числа токенов: около трёх символов кириллицы на токен."""
+    return round(len(text) / 3)
+
+
+def test_skill_budget_table_covers_skills() -> None:
+    assert sorted(SKILL_MD_BUDGET_BYTES) == SKILLS
+
+
+@pytest.mark.parametrize("skill", SKILLS)
+def test_skill_md_fits_budget(skill: str) -> None:
+    content = (SKILLS_DIR / skill / "SKILL.md").read_bytes()
+    text = content.decode("utf-8")
+    budget = SKILL_MD_BUDGET_BYTES[skill]
+    assert len(content) <= budget, (
+        f"{skill}/SKILL.md: {len(content)} байт при бюджете {budget} "
+        f"({len(text)} символов, ~{_token_estimate(text)} токенов по оценке len/3); "
+        "подробности — в references/"
+    )
+
+
+@pytest.mark.parametrize("skill", SKILLS)
+def test_skill_description_is_short(skill: str) -> None:
+    text = (SKILLS_DIR / skill / "SKILL.md").read_text(encoding="utf-8")
+    found = DESCRIPTION.search(text)
+    assert found, f"{skill}/SKILL.md: нет description в шапке"
+    description = found.group(1).strip()
+    assert len(description) <= DESCRIPTION_LIMIT, (
+        f"{skill}: description {len(description)} символов при пределе {DESCRIPTION_LIMIT} "
+        f"(~{_token_estimate(description)} токенов по оценке len/3)"
+    )

@@ -71,6 +71,7 @@ def main() -> int:
 		servers = config.get("mcp", {}).get("servers", {})
 		check("mcp 1c-testpilot разведён", servers.get("1c-testpilot", {}).get("command") == "1c-testpilot", str(servers.keys()))
 		check("mcp 1c-db с url по умолчанию", servers.get("1c-db", {}).get("url") == "http://127.0.0.1:6003/mcp", str(servers.get("1c-db")))
+		check("mcp 1c-kd с url по умолчанию", servers.get("1c-kd", {}).get("url") == "http://127.0.0.1:8060/mcp", str(servers.get("1c-kd")))
 		check("профили testpilot указывают в .zcode", servers.get("1c-testpilot", {}).get("env", {}).get("TC1C_PROFILES_FILE") == ".zcode/testpilot/profiles.yaml", "нет")
 
 		# ── idемпотентность: повторный wire не дублирует и не меняет конфиг ──
@@ -119,12 +120,16 @@ def main() -> int:
 
 		# ── url из contour.json подставляется ──
 		c1 = root / ".zcode" / "1c" / "contour.json"
-		c1.write_text('{"1c_db": {"url": "http://192.168.1.50:6003/mcp"}}', encoding="utf-8")
+		c1.write_text('{"1c_db": {"url": "http://192.168.1.50:6003/mcp"},'
+		              ' "1c_kd": {"url": "http://192.168.1.50:8060/mcp"}}', encoding="utf-8")
 		run_vendored()
 		config3 = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8"))
 		check("url 1c-db из contour.json",
 		      config3["mcp"]["servers"]["1c-db"]["url"] == "http://192.168.1.50:6003/mcp",
 		      config3["mcp"]["servers"]["1c-db"]["url"])
+		check("url 1c-kd из contour.json",
+		      config3["mcp"]["servers"]["1c-kd"]["url"] == "http://192.168.1.50:8060/mcp",
+		      config3["mcp"]["servers"]["1c-kd"]["url"])
 
 		# ── каркас env-настроек: дозаполнение без затирания ──
 		contour3 = json.loads(c1.read_text(encoding="utf-8"))
@@ -148,6 +153,9 @@ def main() -> int:
 		check("создан каркас с 1c_db.url по умолчанию",
 		      contour4.get("1c_db", {}).get("url") == "http://127.0.0.1:6003/mcp",
 		      str(contour4.get("1c_db")))
+		check("создан каркас с 1c_kd.url по умолчанию",
+		      contour4.get("1c_kd", {}).get("url") == "http://127.0.0.1:8060/mcp",
+		      str(contour4.get("1c_kd")))
 		check("создан каркас с publish.ibsrv=distrobox:auto",
 		      contour4.get("1c", {}).get("publish", {}).get("ibsrv") == "distrobox:auto",
 		      str(contour4.get("1c")))
