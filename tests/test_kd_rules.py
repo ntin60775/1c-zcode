@@ -4,6 +4,7 @@
 Запуск: python3 tests/test_kd_rules.py
 """
 import json
+import os
 import re
 import subprocess
 import sys
@@ -75,6 +76,78 @@ def main() -> int:
 			text = path.read_text(encoding="utf-8")
 			check(f"скилл {name}: без отсылок к kd-install ({path.name})",
 			      "kd-install" not in text, str(path))
+
+	# ── kd_register_project.py: синтаксис ──
+	register = REPO / "scripts" / "kd_register_project.py"
+	check("kd_register_project.py на месте", register.is_file(), str(register))
+	compile_check = subprocess.run([sys.executable, "-m", "py_compile", str(register)],
+	                               capture_output=True, text=True)
+	check("kd_register_project.py компилируется", compile_check.returncode == 0,
+	      compile_check.stderr[:200])
+
+	# ── функциональная проба: tmp-проект → tmp-станция (нужен pyyaml станции) ──
+	station_default = Path.home() / ".local" / "share" / "1c-zcode" / "kd-rules-mcp"
+	station_py = Path(os.environ.get("KD_RULES_PYTHON")
+	                  or station_default / ".venv" / "bin" / "python")
+	if not station_py.is_file():
+		check("проба регистрации пропущена (нет станции на машине)", True,
+		      "станции нет — скрипт проверен живой пробой при установке")
+	else:
+		import tempfile
+
+		def read_yaml(path: Path):
+			parsed = subprocess.run(
+				[str(station_py), "-c",
+				 "import sys, json, yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1]))))",
+				 str(path)], capture_output=True, text=True)
+			return json.loads(parsed.stdout or "{}")
+
+		with tempfile.TemporaryDirectory() as tmp:
+			tmp = Path(tmp)
+			proj = tmp / "proj"
+			(proj / "src" / "cf").mkdir(parents=True)
+			(proj / "src" / "cf" / "Configuration.xml").write_text("<Config/>", encoding="utf-8")
+			(proj / "src" / "cfe" / "Расш1").mkdir(parents=True)
+			(proj / "src" / "cfe" / "Расш1" / "Configuration.xml").write_text("<E/>", encoding="utf-8")
+			station = tmp / "station"
+			station.mkdir()
+			(station / "projects.yaml").write_text(
+				"# проекты подключает kd_register_project.py\nprojects: {}\n",
+				encoding="utf-8")
+			env = dict(os.environ, KD_RULES_STATION=str(station),
+			           KD_RULES_PYTHON=str(station_py))
+
+			def run_reg(*cli):
+				return subprocess.run(
+					[sys.executable, str(register), str(proj), *cli],
+					capture_output=True, text=True, env=env)
+
+			r = run_reg("--id", "testproj")
+			check("регистрация выходит 0", r.returncode == 0, (r.stdout + r.stderr)[:300])
+			entry = (read_yaml(station / "projects.yaml").get("projects") or {}).get("testproj")
+			check("projects.yaml: ключ testproj с выгрузкой src/cf",
+			      isinstance(entry, dict)
+			      and entry.get("configurations", {}).get("full", {}).get("dump") == "src/cf",
+			      str(entry))
+			check("projects.yaml: расширение src/cfe/Расш1 найдено",
+			      entry is not None
+			      and entry.get("configurations", {}).get("full", {}).get("extensions")
+			      == ["src/cfe/Расш1"],
+			      str(entry))
+			local_entry = (read_yaml(station / "projects.local.yaml").get("projects") or {}).get("testproj")
+			check("projects.local.yaml: абсолютный путь проекта",
+			      local_entry == str(proj), str(local_entry))
+
+			r = run_reg("--id", "testproj", "--check")
+			check("--check зелёный после регистрации", r.returncode == 0, r.stdout[:200])
+
+			r = run_reg("--id", "testproj", "--unregister")
+			check("--unregister выходит 0", r.returncode == 0, (r.stdout + r.stderr)[:200])
+			left = (read_yaml(station / "projects.yaml").get("projects") or {})
+			left_local = (read_yaml(station / "projects.local.yaml").get("projects") or {})
+			check("после unregister записи нет в обоих файлах",
+			      "testproj" not in left and "testproj" not in left_local,
+			      f"{left} / {left_local}")
 
 	return summary()
 

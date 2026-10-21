@@ -5,10 +5,9 @@
 # умолчанию, URL меняется в .zcode/1c/contour.json → 1c_kd.url). Станция
 # ставится install_kd_rules.sh; её состояние (projects.yaml,
 # projects.local.yaml, workspace/, cache/) переживает старт/стоп.
-# Первый старт копирует projects.example.yaml → projects.yaml: заполни его
-# путями к XML-выгрузкам своих 1С-проектов (пример лежит рядом с ним —
-# projects.local.example.yaml; машинные пути и логины — в local-файле,
-# он не должен попадать в git).
+# Первый старт создаёт пустой каркас projects.yaml; проект подключает к
+# станции kd_register_project.py из корня 1С-проекта (машинные пути — в
+# projects.local.yaml, он в git не попадает).
 #
 # Использование:
 #   start_kd_rules.sh                   # поднять и дождаться готовности
@@ -114,9 +113,9 @@ start)
 		rm -f "$PIDFILE"
 		sleep 1
 	fi
-	if [ ! -f "$STATION/projects.yaml" ] && [ -f "$STATION/projects.example.yaml" ]; then
-		cp "$STATION/projects.example.yaml" "$STATION/projects.yaml"
-		echo "→ создан $STATION/projects.yaml из примера — заполни своими 1С-проектами"
+	if [ ! -f "$STATION/projects.yaml" ]; then
+		printf '# Проекты подключает kd_register_project.py из скриптов контура 1c-zcode;\n# поля (bases, rules_dir, writable_extensions) — projects.example.yaml рядом.\nprojects: {}\n' >"$STATION/projects.yaml"
+		echo "→ создан пустой каркас $STATION/projects.yaml — проекты подключает kd_register_project.py (скилл 1c-kd-rules)"
 	fi
 	cd "$STATION"
 	echo "→ поднимаю $URL (лог: $LOG)"

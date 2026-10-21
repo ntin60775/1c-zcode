@@ -33,9 +33,13 @@ ZCode-сессия (проект 1С)                     машина
 - Сервер настраивается только env `KD2_*` (`KD2_HOST/KD2_PORT/KD2_PROJECTS_FILE/
   KD2_WORKSPACE/KD2_CACHE_DIR/KD2_TOKEN/KD2_LOG_LEVEL`) — их задаёт
   `start_kd_rules.sh`; в конфиге проекта настраивается лишь URL.
-- `projects.yaml` станции — описания 1С-проектов (выгрузки Конфигуратора, базы,
-  `rules_dir`, обмены); `projects.local.yaml` — пути машины и логины, в git не
-  попадает. Первый старт копирует `projects.example.yaml → projects.yaml`.
+- `projects.yaml` станции — описания проектов; первый старт создаёт пустой
+  каркас (`projects: {}`). Проект подключает `kd_register_project.py` из
+  корня 1С-проекта: авто-детект выгрузок (`src/*/Configuration.xml`,
+  расширения `src/cfe/*/`), запись в projects[.local].yaml, проверка
+  загрузчиком станции; рестарт сервера не нужен — каталог перечитывается на
+  каждый вызов. `projects.local.yaml` (машинные абсолютные пути) в git не
+  попадает.
 
 ## Эксплуатация
 

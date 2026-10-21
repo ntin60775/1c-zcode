@@ -69,4 +69,4 @@ echo "→ uv sync (первый раз качает Python 3.12 и колёса 
 
 (cd "$STATION" && uv run --no-sync python -c "from importlib.metadata import version; print('✓ kd-rules-mcp импортируется, версия', version('kd-rules-mcp'))")
 echo "✓ станция готова: $STATION"
-echo "  дальше: start_kd_rules.sh — поднять сервер; projects.yaml станции — описать 1С-проекты"
+echo "  дальше: start_kd_rules.sh — поднять сервер; проект подключает kd_register_project.py из корня 1С-проекта"

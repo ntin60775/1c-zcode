@@ -87,7 +87,7 @@
       "if_exists": ".zcode/1c/scripts/wire_config.py"
     },
     {
-      "say": "Перезапусти сессию ZCode: hooks и MCP серверы (1c-testpilot, 1c-db, 1c-kd) подключаются на старте. Затем /1c-doctor — он проверяет и живость unica MCP (unica_ping: handshake + tools/list). MCP 1c-kd (правила обмена КД): станция ставится .zcode/1c/scripts/install_kd_rules.sh, сервер поднимает start_kd_rules.sh."
+      "say": "Перезапусти сессию ZCode: hooks и MCP серверы (1c-testpilot, 1c-db, 1c-kd) подключаются на старте. Затем /1c-doctor — он проверяет и живость unica MCP (unica_ping: handshake + tools/list). MCP 1c-kd (правила обмена КД): станция ставится .zcode/1c/scripts/install_kd_rules.sh, сервер поднимает start_kd_rules.sh; этот проект подключает к станции .zcode/1c/scripts/kd_register_project.py при первой задаче по правилам (скилл 1c-kd-rules)."
     }
   ]
 }

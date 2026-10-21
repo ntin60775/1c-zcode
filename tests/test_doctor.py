@@ -100,6 +100,9 @@ def main() -> int:
 		fake_station = Path(tmp) / "kd-station"
 		fake_station.mkdir()
 		(fake_station / "pyproject.toml").write_text("[project]\nname = 'kd'\n", encoding="utf-8")
+		# url — заведомо мёртвый порт: на машине с живым сервером 8060 кейс
+		# «сервер молчит» иначе теряет детерминизм
+		scaffold(root, '{"1c_kd": {"url": "http://127.0.0.1:9/mcp"}}')
 		r = run_doctor(root, {"KD_RULES_STATION": str(fake_station)})
 		check("kd: станция есть, сервер молчит — WARN со start-подсказкой",
 		      "сервер не отвечает" in r.stdout and "start_kd_rules.sh" in r.stdout,
