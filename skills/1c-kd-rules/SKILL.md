@@ -50,8 +50,10 @@ python3 .zcode/1c/scripts/kd_register_project.py .
 
 После регистрации: `project_list` → `structure_load_project` с ключом проекта. Дозаполнение по потребности
 (поля описаны в `projects.example.yaml` станции): `bases` (песочница для `exchange_check`/`bsp_check`),
-`rules_dir` (запись правил в репозиторий проекта), `writable_extensions`, `exchanges`. Порядок расширений
-в `extensions` — порядок наложения, сверяй с базой.
+`writable_extensions`, `exchanges`. Порядок расширений в `extensions` — порядок наложения, сверяй с базой.
+Правила: если в проекте есть каталог `kd2-rules/` (компонент навыка 1c-project-layout, git-tracked),
+register подхватывает его в `rules_dir` сам — сервер пишет туда `rules_save`/`handlers_export`; нет
+каталога — register подскажет завести.
 
 ## Станция и её файлы
 

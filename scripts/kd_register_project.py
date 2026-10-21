@@ -14,7 +14,8 @@ start_kd_rules.sh --stop && start_kd_rules.sh.
      Configuration.xml — расширения в алфавитном порядке (порядок наложения
      уточняет агент, см. скилл 1c-kd-rules).
   2. Вписывает проект в projects.yaml станции (dump/extensions относительно
-     корня проекта; rules_dir — если задан --rules-dir) и в
+     корня проекта; rules_dir — каталог kd2-rules/ проекта, если существует,
+     иначе --rules-dir) и в
      projects.local.yaml — абсолютный путь проекта на этой машине.
   3. Проверяет итог загрузчиком станции (kd_rules_mcp.projects.load_catalog).
 
@@ -187,6 +188,7 @@ def main() -> int:
 	entry = projects.get(project_id)
 	dump = args.dump
 	extensions = [p.strip() for p in args.extensions.split(",")] if args.extensions else None
+	rules_dir = args.rules_dir or ("kd2-rules" if (root / "kd2-rules").is_dir() else None)
 	if not dump or extensions is None:
 		auto_dump, auto_ext = find_dumps(root)
 		dump = dump or auto_dump
@@ -195,7 +197,7 @@ def main() -> int:
 	projects[project_id] = {
 		"name": args.name or project_id,
 		"configurations": {"full": {"dump": dump, **({"extensions": extensions} if extensions else {})}},
-		**({"rules_dir": args.rules_dir} if args.rules_dir else {}),
+		**({"rules_dir": rules_dir} if rules_dir else {}),
 	}
 	local_projects[project_id] = str(root)
 
@@ -205,6 +207,10 @@ def main() -> int:
 	ext_note = f", расширений: {len(extensions)}" if extensions else ""
 	print(f"✓ «{project_id}» подключён к станции: выгрузка {dump}{ext_note}")
 	print(f"  папка: {root}")
+	print(f"  правила: {rules_dir}" if rules_dir else
+	      "  правила: каталога kd2-rules/ нет — правила пишутся только в workspace станции;"
+	      " для хранения в git заводи компонент kd2-rules (навык 1c-project-layout)"
+	      " и перерегистрируй")
 	if entry is None:
 		print("  новый проект — перезапусти сервер: start_kd_rules.sh --stop && start_kd_rules.sh"
 		      " (список папок читается на старте)")

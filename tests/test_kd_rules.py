@@ -109,6 +109,8 @@ def main() -> int:
 			(proj / "src" / "cf" / "Configuration.xml").write_text("<Config/>", encoding="utf-8")
 			(proj / "src" / "cfe" / "Расш1").mkdir(parents=True)
 			(proj / "src" / "cfe" / "Расш1" / "Configuration.xml").write_text("<E/>", encoding="utf-8")
+			(proj / "kd2-rules").mkdir()
+			(proj / "kd2-rules" / "ExchangeRules.xml").write_text("<Rules/>", encoding="utf-8")
 			station = tmp / "station"
 			station.mkdir()
 			(station / "projects.yaml").write_text(
@@ -133,6 +135,9 @@ def main() -> int:
 			      entry is not None
 			      and entry.get("configurations", {}).get("full", {}).get("extensions")
 			      == ["src/cfe/Расш1"],
+			      str(entry))
+			check("projects.yaml: kd2-rules/ подхвачен в rules_dir",
+			      entry is not None and entry.get("rules_dir") == "kd2-rules",
 			      str(entry))
 			local_entry = (read_yaml(station / "projects.local.yaml").get("projects") or {}).get("testproj")
 			check("projects.local.yaml: абсолютный путь проекта",

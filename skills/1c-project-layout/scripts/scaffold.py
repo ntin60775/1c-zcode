@@ -47,6 +47,7 @@ KIND_DIRS = {
 COMPONENT_DIRS = {
 	"tools-mcp": "tools/mcp",
 	"docs": "docs",
+	"kd2-rules": "kd2-rules",
 }
 DEFAULT_KINDS = "cf,cfe,epf,erf"
 DEFAULT_COMPONENTS = ""
@@ -92,6 +93,7 @@ AGENTS_FOR_DIR = {
 	"tools/mcp": "tools_mcp",
 	"vendor": "vendor",
 	"docs": "docs",
+	"kd2-rules": "kd2_rules",
 }
 
 # Строки таблицы структуры корневого AGENTS.md: каталог -> (условие, назначение).
@@ -117,6 +119,9 @@ TABLE_ROWS = [
 	 " доставляет start_1c_db.sh)"),
 	("docs", "docs",
 	 "документация проекта"),
+	("kd2-rules", "kd2-rules",
+	 "файлы правил обмена КД 2 (XML правил, zip-комплекты БСП); git-tracked,"
+	 " rules_dir сервера kd-rules"),
 ]
 
 

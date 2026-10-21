@@ -31,26 +31,35 @@ when_to_use: "Проект 1С подключается к контуру (вп�
    `desktop: isolated`. E2E-тесты живут в `tests/e2e/` проекта
    (workflow `1c-e2e-author` пишет их сам); XML-сценарии (`uilog`) —
    разовые smoke, не носитель регресса.
-3. **`.zcode/config.json`** — разводка hooks + MCP:
+3. **Каталог правил обмена КД 2** — если проект работает с правилами
+   обмена, предложи компонент `kd2-rules` навыка `1c-project-layout`:
+   `python3 .zcode/skills/1c-project-layout/scripts/scaffold.py structure
+   --dir <корень> --components kd2-rules`. Каталог git-tracked
+   (каталожный `AGENTS.md` — файлы правил живут в истории git рядом с
+   кодом); сервер kd-rules пишет в него по `rules_dir` —
+   `kd_register_project.py` подхватывает каталог сам. Проект с правилами
+   не работает — шаг пропусти: компонент не в обязательном минимуме,
+   doctor молчит.
+4. **`.zcode/config.json`** — разводка hooks + MCP:
    `python3 .zcode/1c/scripts/wire_config.py <корень>`. Идемпотентно:
    повторный запуск безопасен, чужие hook-записи сохраняет.
-4. **Секция AGENTS.md** — инварианты контура в инструкции проекта:
+5. **Секция AGENTS.md** — инварианты контура в инструкции проекта:
    возьми шаблон `.zcode/1c/templates/agents-section.md` и вставь между
    маркерами `<!-- BEGIN 1C CONTOUR (1c-zcode) -->` … `<!-- END 1C CONTOUR -->`.
    **Только своя секция**: секцию KB/dev-flow ведёт ontoship-zcode,
    остальной AGENTS.md принадлежит проекту. Обновление = замена секции
    между маркерами.
-5. **`.gitignore`** — строки контура (если нет):
+6. **`.gitignore`** — строки контура (если нет):
    `.zcode/testpilot/profiles.local.yaml`, `tools/VAParams.json`,
    `tools/va-env.local.json`, `v8project.local.yaml`, `build/`,
    `.zcode/contour` (если помечаешь деревья по месту). Сами `.zcode/`
    (скиллы, hooks, config.json, workflows, журнала deploy) — в git.
-6. **Признак контура**: тестовое дерево — `contour: test` в
+7. **Признак контура**: тестовое дерево — `contour: test` в
    `v8project.local.yaml` или файл `.zcode/contour` (прод по умолчанию,
    fail-closed).
-7. **Проверка**: `/1c-doctor` — все проверки зелёные; тестовый unica-вызов
+8. **Проверка**: `/1c-doctor` — все проверки зелёные; тестовый unica-вызов
    (`mcp__unica__project_status` с `cwd` корня) отвечает.
-8. **E2E/API-ритуал** (после зелёного doctor): GUI-e2e — прогон
+9. **E2E/API-ритуал** (после зелёного doctor): GUI-e2e — прогон
    `bash .zcode/1c/scripts/run_e2e.sh <профиль>`; API — публикация
    `bash .zcode/1c/scripts/publish_ib.sh start` (порт в `contour.json →
    1c.publish.port`), тесты дергают `PUBLISH_URL` из `E2E_PUBLISH_JSON`.

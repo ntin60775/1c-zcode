@@ -37,7 +37,7 @@ def main() -> None:
 		for rel in ("src/cf", "src/cfe", "src/epf", "src/erf", "tests/e2e",
 		            "tools", "vendor"):
 			_lib.check(f"каталог {rel} создан", os.path.isdir(os.path.join(p1, rel)))
-		for rel in ("tools/mcp", "docs"):
+		for rel in ("tools/mcp", "docs", "kd2-rules"):
 			_lib.check(f"без компонента {rel} каталога нет",
 			           not os.path.exists(os.path.join(p1, rel)))
 		for rel in ("src", "src/cf", "src/cfe", "src/epf", "src/erf",
@@ -53,7 +53,8 @@ def main() -> None:
 		_lib.check("таблица: tools/ и vendor/ в обязательной части",
 		           "`tools/`" in root_text and "`vendor/`" in root_text)
 		_lib.check("таблица: tools/mcp и docs отсутствуют",
-		           "tools/mcp" not in root_text and "`docs/`" not in root_text)
+		           "tools/mcp" not in root_text and "`docs/`" not in root_text
+		           and "kd2-rules" not in root_text)
 		pd = Path(p1) / "packagedef"
 		_lib.check("packagedef создан в корне", pd.is_file())
 		_lib.check("packagedef пуст (0 байт)",
@@ -77,17 +78,24 @@ def main() -> None:
 		# ── 3. kinds подмножеством; компоненты всеми ──
 		p2 = os.path.join(tmp, "kinds")
 		sh("structure", "--dir", p2, "--kinds", "cf", "--components",
-		   "tools-mcp,docs")
+		   "tools-mcp,docs,kd2-rules")
 		_lib.check("kinds=cf: src/cf есть", os.path.isdir(os.path.join(p2, "src/cf")))
 		_lib.check("kinds=cf: src/cfe нет", not os.path.exists(os.path.join(p2, "src/cfe")))
 		_lib.check("компоненты все: tools/mcp и docs с AGENTS.md",
 		           os.path.isfile(os.path.join(p2, "tools/mcp/AGENTS.md"))
 		           and os.path.isfile(os.path.join(p2, "docs/AGENTS.md")))
+		_lib.check("компонент kd2-rules: каталог и AGENTS.md",
+		           os.path.isdir(os.path.join(p2, "kd2-rules"))
+		           and os.path.isfile(os.path.join(p2, "kd2-rules/AGENTS.md")))
+		_lib.check("kd2_rules.md упоминает rules_dir и git",
+		           "rules_dir" in (Path(p2) / "kd2-rules" / "AGENTS.md").read_text(encoding="utf-8"))
 		_lib.check("устаревший компонент tests-e2e — громкий отказ",
 		           sh("structure", "--dir", os.path.join(tmp, "x1"),
 		              "--components", "tests-e2e").returncode == 2)
 		t2 = (Path(p2) / "AGENTS.md").read_text(encoding="utf-8")
 		_lib.check("таблица kinds=cf без src/cfe", "src/cfe" not in t2)
+		_lib.check("таблица p2: kd2-rules в компонентной части",
+		           "`kd2-rules/`" in t2)
 
 		# ── 4. неизвестный kind — громкий отказ ──
 		r = sh("structure", "--dir", os.path.join(tmp, "bad"), "--kinds", "cf,zzz")
