@@ -5,14 +5,17 @@
 1c-project-bootstrap. Делает две вещи:
 
 1. hooks: переносит определения из вендоренного .zcode/hooks/hooks.json
-   (плагинная форма с ${CLAUDE_PLUGIN_ROOT}) в config.json (workspace-форма,
-   абсолютные пути) и ставит hooks.enabled = true. Наши предыдущие записи
-   (args содержат .zcode/hooks/, относительные или абсолютные) заменяются,
-   чужие hook-записи не трогаются. Абсолютные пути обязательны: ZCode
-   спавнит хук-процесс с cwd текущего каталога сессии, а тот персистентен
-   между Bash-вызовами — относительный путь после cd в подкаталог не
-   находится, python3 выходит с кодом 2 (кодом блока PreToolUse) и каждый
-   следующий вызов Bash/Write/Edit/MCP падает до конца сессии.
+   (плагинная форма ${ZCODE_PLUGIN_ROOT}; старые раскладки несут
+   совместимую ${CLAUDE_PLUGIN_ROOT} — читается тоже) в config.json
+   (workspace-форма, абсолютные пути) и ставит hooks.enabled = true. Наши
+   предыдущие записи (args содержат .zcode/hooks/, относительные или
+   абсолютные) заменяются, чужие hook-записи не трогаются. Абсолютные
+   пути обязательны: ZCode спавнит хук-процесс с cwd текущего каталога
+   сессии, а тот персистентен между Bash-вызовами — относительный путь
+   после cd в подкаталог не находится, python3 выходит с кодом 2 (кодом
+   блока PreToolUse) и каждый следующий вызов Bash/Write/Edit/MCP падает
+   до конца сессии. Канон контура — в хук-слое только имена ZCODE_*:
+   CLAUDE_* формы читаются ради старых раскладок, не пишутся.
 2. mcp: вливает фрагменты из scripts/mcp_fragments.json (шаблоны 1c-testpilot,
    1c-db и 1c-kd) в mcp.servers, подставляя url из .zcode/1c/contour.json
    (1c_db.url → {{1c_db_url}}, 1c_kd.url → {{kd_url}}; умолчания —
@@ -143,7 +146,10 @@ def plugin_hooks_to_config(root: Path) -> dict:
 				args = []
 				for arg in hook.get("args") or []:
 					text = str(arg)
-					if "${CLAUDE_PLUGIN_ROOT}/hooks/" in text:
+					# канон — ZCODE_*; CLAUDE_* читаем ради старых раскладок,
+					# workspace-форму пишем только абсолютными путями
+					if text.startswith(("${ZCODE_PLUGIN_ROOT}/hooks/",
+					                    "${CLAUDE_PLUGIN_ROOT}/hooks/")):
 						text = str(root / ".zcode" / "hooks" / text.split("/hooks/", 1)[1])
 					args.append(text)
 				wired = {k: v for k, v in hook.items() if k != "args"}

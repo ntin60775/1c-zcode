@@ -34,7 +34,7 @@ def main() -> int:
 		(vendored_hooks / "hooks.json").write_text(json.dumps({
 			"hooks": {"PreToolUse": [{"matcher": "^Bash$", "hooks": [{
 				"type": "process", "command": "python3",
-				"args": ["${CLAUDE_PLUGIN_ROOT}/hooks/retry_gate.py"],
+				"args": ["${ZCODE_PLUGIN_ROOT}/hooks/retry_gate.py"],
 				"timeoutMs": 5000}]}]}
 		}), encoding="utf-8")
 		vendored_scripts = root / ".zcode" / "1c" / "scripts"
@@ -100,6 +100,21 @@ def main() -> int:
 		check("после миграции нет дублей нашей записи",
 		      sum(1 for c in (h.get("command") for e in config_rel["hooks"]["events"]["PreToolUse"]
 		                      for h in e["hooks"]) if c == "python3") == 1, str(args_rel))
+
+		# ── старая раскладка с CLAUDE-формой тоже читается (совместимость на чтение) ──
+		hj = json.loads((vendored_hooks / "hooks.json").read_text(encoding="utf-8"))
+		hj["hooks"]["PostToolUse"] = [{"matcher": "^Bash$", "hooks": [{
+			"type": "process", "command": "python3",
+			"args": ["${CLAUDE_PLUGIN_ROOT}/hooks/doc_gate.py"]}]}]
+		(vendored_hooks / "hooks.json").write_text(json.dumps(hj), encoding="utf-8")
+		r = run_vendored()
+		check("CLAUDE-форма hooks.json читается", r.returncode == 0, r.stderr[:200])
+		config_claude = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8"))
+		args_claude = [a for e in config_claude["hooks"]["events"]["PostToolUse"]
+		               for h in e["hooks"] for a in h["args"]]
+		check("CLAUDE-форма переписана абсолютным путём",
+		      str(root / ".zcode" / "hooks" / "doc_gate.py") in [str(a) for a in args_claude]
+		      and not any("CLAUDE" in str(a) for a in args_claude), str(args_claude))
 
 		# ── --check зелёный после wire ──
 		r = run_vendored("--check")
