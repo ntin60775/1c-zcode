@@ -65,7 +65,8 @@ def main() -> int:
 		      str(config.get("hooks", {}).keys()))
 		pre = config["hooks"]["events"]["PreToolUse"]
 		args = [a for entry in pre for h in entry["hooks"] for a in h["args"]]
-		check("путь хука переписан на .zcode/hooks/", any(".zcode/hooks/retry_gate.py" in str(a) for a in args), str(args))
+		check("путь хука абсолютный (<root>/.zcode/hooks/…)",
+		      any(str(a) == str(root / ".zcode" / "hooks" / "retry_gate.py") for a in args), str(args))
 		check("макрос PLUGIN_ROOT не остался", not any("PLUGIN_ROOT" in str(a) for a in args), str(args))
 
 		servers = config.get("mcp", {}).get("servers", {})
@@ -79,6 +80,26 @@ def main() -> int:
 		run_vendored()
 		after = (root / ".zcode" / "config.json").read_text(encoding="utf-8")
 		check("повторный wire идемпотентен", before == after, "конфиг изменился")
+
+		# ── миграция старой относительной записи: заменяется на абсолютную ──
+		# (проекты, разведённые до v0.4.61, несут args ".zcode/hooks/…"; после
+		# cd в подкаталог такой хук не находится — ишью #34)
+		config["hooks"]["events"]["PreToolUse"] = [
+			{"matcher": "^Bash$", "hooks": [{"type": "process", "command": "python3",
+				"args": [".zcode/hooks/retry_gate.py"], "timeoutMs": 5000}]}]
+		(root / ".zcode" / "config.json").write_text(
+			json.dumps(config, ensure_ascii=False), encoding="utf-8")
+		r = run_vendored()
+		check("миграция относительной записи: wire выходит 0", r.returncode == 0, r.stderr[:200])
+		config_rel = json.loads((root / ".zcode" / "config.json").read_text(encoding="utf-8"))
+		args_rel = [a for e in config_rel["hooks"]["events"]["PreToolUse"]
+		            for h in e["hooks"] for a in h["args"]]
+		check("относительная запись заменена абсолютной",
+		      str(root / ".zcode" / "hooks" / "retry_gate.py") in [str(a) for a in args_rel]
+		      and ".zcode/hooks/retry_gate.py" not in [str(a) for a in args_rel], str(args_rel))
+		check("после миграции нет дублей нашей записи",
+		      sum(1 for c in (h.get("command") for e in config_rel["hooks"]["events"]["PreToolUse"]
+		                      for h in e["hooks"]) if c == "python3") == 1, str(args_rel))
 
 		# ── --check зелёный после wire ──
 		r = run_vendored("--check")
