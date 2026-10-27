@@ -36,6 +36,10 @@ rsync -a --delete --exclude .git --exclude UPSTREAM.md <клон>/ vendor/kd-rul
 #    известный ложный класс, апстрим наши имена не знает)
 # 4. Прогнать тесты контура + lint скиллов; живая проба:
 #    scripts/install_kd_rules.sh && scripts/start_kd_rules.sh
+#    Перед стартом погасить слушателя 8060: SessionStart-хук мог разбудить
+#    станцию СТАРОЙ версии — probe скрипта видит любого отвечающего на
+#    порту и рапортует «жив», а новый экземпляр падает «address already
+#    in use» (проверено синком 27.10; диагноз — kd-rules.log станции)
 # 5. Пин в scripts/install_kd_rules.sh (KD_PIN) = новой версии
 #    pyproject.toml вендора; записи в журнале синков.
 # 6. Релиз контура: тег → пин в sot-zcode-marketplace → раскатка.
