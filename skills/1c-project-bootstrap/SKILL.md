@@ -54,9 +54,10 @@ when_to_use: "Проект 1С подключается к контуру (вп�
    `tools/va-env.local.json`, `v8project.local.yaml`, `build/`,
    `.zcode/contour` (если помечаешь деревья по месту). Сами `.zcode/`
    (скиллы, hooks, config.json, workflows, журнала deploy) — в git.
-7. **Признак контура**: тестовое дерево — `contour: test` в
-   `v8project.local.yaml` или файл `.zcode/contour` (прод по умолчанию,
-   fail-closed).
+7. **Признак контура**: тестовое дерево — файл `.zcode/contour` со словом
+   `test` (прод по умолчанию, fail-closed). Ключ `contour:` в
+   `v8project.local.yaml` не писать: v8-runner 0.15 отвергает незнакомый
+   верхнеуровневый ключ local-слоя, и `unica.run` падает с `bad_value`.
 8. **Проверка**: `/1c-doctor` — все проверки зелёные; тестовый unica-вызов
    (`mcp__unica__project_status` с `cwd` корня) отвечает.
 9. **E2E/API-ритуал** (после зелёного doctor): GUI-e2e — прогон

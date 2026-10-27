@@ -12,8 +12,11 @@ execute-группы инструментов) и 1c-db = 1c-mcp-toolkit (зап
   признака нет  — считаем прод (fail-closed).
 
 Признак контура (первое найденное, как в доне):
-  - файл .zcode/contour со словом test или prod;
-  - ключ `contour: test|prod` в v8project.local.yaml / v8project.yaml.
+  - файл .zcode/contour со словом test или prod — канон;
+  - ключ `contour: test|prod` в v8project.local.yaml / v8project.yaml —
+    только обратная совместимость старых проектов: v8-runner 0.15 отвергает
+    незнакомый верхнеуровневый ключ в local-слое (`bad_value`), и любой
+    unica.run перестаёт работать. Новым проектам ключ не писать.
 
 Опасные инструменты (короткие имена, override — contour.json → mcp_gate.dangerous):
   1c-testpilot: tc_execute_code, tc_execute_query, tc_execute_custom_bsl_function
@@ -156,8 +159,9 @@ def block_message(server: str, short: str, root: str, contour: str) -> str:
 		f"Проект: {root}",
 		"",
 		"Что делать:",
-		"  • если это тестовая база — объяви контур: ключ `contour: test` в",
-		"    v8project.local.yaml либо файл .zcode/contour со словом test;",
+		"  • если это тестовая база — объяви контур файлом .zcode/contour",
+		"    со словом test (ключ `contour:` в v8project.local.yaml не писать:",
+		"    v8-runner 0.15 его отвергает);",
 		f"  • разовое разрешение — строка «{short}» в .zcode/mcp-write-allow.txt",
 		"    (каждое разрешение пишется в журнал аудита);",
 		"  • на проде безопаснее читать: execute_query, get_metadata,",

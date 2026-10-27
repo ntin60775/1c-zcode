@@ -67,8 +67,10 @@ view/check/diff (перепроверка)`. План `apply` не меняет 
    или меняй условия.
 7. **Прод-контур fail-closed**: изменяющие инструменты тест-контура
    (`tc_execute_*` у 1c-testpilot, `execute_code` и др. у 1c-db) без
-   признака `test` (ключ `contour:` в `v8project.local.yaml` или
-   `.zcode/contour`) блокируются. Разовое разрешение — строка в
+   признака `test` (файл `.zcode/contour` со словом test) блокируются.
+   Ключ `contour:` в `v8project.local.yaml` не писать: v8-runner 0.15
+   отвергает незнакомый верхнеуровневый ключ local-слоя (`bad_value`) и
+   любая `unica.run`-операция падает. Разовое разрешение — строка в
    `.zcode/mcp-write-allow.txt`.
 
 Все вызовы Unica несут `cwd` корня проекта (или ворктри) — на него смотрят
