@@ -137,7 +137,8 @@ create/update/delete; `server`; `eventlog`. `infobase dump`/`restore` — это
 
 - **Из .dt**: `infobase create --dbms=<kind> --database-server=… --database-name=…
   --database-user=… --database-password=… --create-database --restore=<файл.dt>
-  [--force]`; файловая — без `--dbms`, с `--data=<каталог>`.
+  [--force]`; файловая — без `--dbms`, с `--db-path=<каталог ИБ>` (`--data`
+  задаёт каталог данных автономного сервера, а не саму базу).
 - **Из XML-исходников git**: `infobase create --import=<каталог src/cf> --apply`,
   расширения — `config import --extension=<имя> <каталог>` плюс `apply`;
   данных нет, только структура — годится для песочницы и проверки цепочки.
@@ -212,6 +213,46 @@ language c` (ibcmd ставит C-функции, язык c в PostgreSQL не�
   заполненного `infobases.origin.dbms` (проверено живыми dryRun). Прямой ibcmd
   по СУБД — законный обход с названной причиной; на PostgreSQL он снимает и
   ограничение Linux.
+
+## Хост Linux: загрузка и выгрузка исходников
+
+Выбор подключения один: файловая база — `--db-path=<каталог ИБ>` (без
+`--dbms`); серверная — координаты СУБД `--dbms=PostgreSQL --database-server=…
+--database-name=… --database-user=… --database-password=…`. `--data` — каталог
+данных автономного сервера (по умолчанию `~/.1cv8/1C/1cv8/standalone-server/`),
+а не путь к базе; относительный `--db-path` считается от него же. Дальше набор
+команд один и тот же, меняется только хвост подключения:
+
+| Задача | Файловая | Серверная (PG на Linux) |
+|---|---|---|
+| Выгрузить конфигурацию в XML | `config export <каталог> --db-path=<ИБ>` | то же + координаты СУБД |
+| Выгрузить расширение | `config export <каталог> --extension=<имя> --db-path=<ИБ>` | то же + координаты |
+| Загрузить XML | `config import <каталог> --db-path=<ИБ>` → `config apply --force --db-path=<ИБ>` | то же + координаты |
+| Загрузить расширение | `config import <каталог> --extension=<имя> …` → `config apply --extension=<имя> --force …` | то же + координаты |
+| .cf | `config load <файл.cf> …`; выгрузка — `config save <файл.cf> --db …` | то же + координаты |
+| Перечень расширений | **нет** (dbms-only, #1103) | unica `extensions.list` или execute_code |
+| Создать базу из XML | `infobase create --import=<каталог> --apply --db-path=<ИБ>` | `… --create-database --import=<каталог> --apply` + координаты |
+
+Практика для серверной базы на Linux:
+
+- **Серверная база — только PostgreSQL** (IBMDB2 и Oracle тоже поддержаны,
+  MSSQL — нет). MSSQL-базу Linux-ibcmd не увидит ни на чтение, ни на запись:
+  исходники с неё снимают с Windows-машины либо переводят базу на PG через
+  `infobase replicate` и дальше работают на Linux.
+- `config export` — чтение, сессии не мешают (риск не проверен); `config
+  apply` берёт эксклюзивную блокировку, поэтому сессии гасят:
+  `--session-terminate=force --force`.
+- unica этот путь не заменяет: подключение `Srvr=…` раннер считает кластерным
+  и отказывает ibcmd в `push`/`pull` независимо от блока `dbms`. Выгрузка и
+  поставка исходников на серверной базе — прямыми командами ibcmd с названной
+  причиной.
+
+**Статус проверки.** Живьём в сессии подтверждено только соединение ibcmd↔PG
+с Linux (`config generation-id`). Создание базы и `config import/export` на PG
+не доведены: `infobase create --create-database` упал на
+`permission denied for language c`, полупустую базу удалили, данные повезли
+`replicate` с Windows. Первый прогон на своей базе делай как проверку, а не
+как рутину.
 
 ## Сверка src↔база — нормализованно
 
