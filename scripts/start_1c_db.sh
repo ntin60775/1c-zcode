@@ -326,10 +326,12 @@ if [[ ! -f "$EPF" ]]; then
 			REPO="$(printf '%s' "$ORIGIN" | sed -E 's#.*github\.com[:/]##; s#\.git$##')"
 		fi
 		if [[ -n "$REPO" ]]; then
+			# каталога может не быть на свежем проекте — без mkdir curl падает
+			# с ошибкой записи (23) до самой загрузки
+			mkdir -p "$(dirname "$EPF")"
 			if curl -fsSL --max-time 120 \
 				-o "$EPF.part" \
 				"https://github.com/$REPO/releases/download/$TAG/$EPF_NAME"; then
-				mkdir -p "$(dirname "$EPF")"
 				mv "$EPF.part" "$EPF"
 				echo "• обработка скачана из релиза $REPO@$TAG: $EPF_NAME"
 			else
