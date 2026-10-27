@@ -31,9 +31,17 @@ testpilot). Существующие значения не затираются 
 отсутствующие ключи; битый файл не трогается. --check contour.json не пишет
 и не проверяет (его контракт — только config.json).
 
+Четвёртая вещь — секция «Контур 1С» в AGENTS.md: между маркерами
+BEGIN/END 1C CONTOUR она объявлена собственностью контура («правится
+контуром, не руками») и заменяется шаблоном .zcode/1c/templates/
+agents-section.md. Без маркеров файл не правится — вставку делает bootstrap
+и migrate_from_omp. Раньше секция обновлялась только мигратором и после
+раскатки дрейфовала (retail: 0.13 при контуре 0.4.66, ишью #38).
+
 Режим --check: exit 1, если config.json не совпадает с ожидаемой разводкой
-(для CI и /1c-doctor). Секретов не пишет: креды тестовых баз живут в
-.zcode/testpilot/profiles.yaml через password_env.
+или секция AGENTS.md разошлась с шаблоном (для CI и /1c-doctor). Секретов
+не пишет: креды тестовых баз живут в .zcode/testpilot/profiles.yaml через
+password_env.
 
 Запуск: python3 wire_config.py <project-root> [--check]
 """
@@ -43,6 +51,10 @@ from pathlib import Path
 
 CONFIG = ".zcode/config.json"
 CONTOUR = ".zcode/1c/contour.json"
+AGENTS = "AGENTS.md"
+AGENTS_SECTION = ".zcode/1c/templates/agents-section.md"
+SECTION_BEGIN = "<!-- BEGIN 1C CONTOUR"
+SECTION_END = "<!-- END 1C CONTOUR"
 DEFAULT_DB_URL = "http://127.0.0.1:6003/mcp"
 DEFAULT_KD_URL = "http://127.0.0.1:8060/mcp"
 # Шаблон url во фрагменте → (ключ contour.json, умолчание)
@@ -202,6 +214,36 @@ def merge_mcp(config: dict, root: Path, plugin_root: Path) -> None:
 
 # ── входная точка ────────────────────────────────────────────────────────────
 
+def sync_agents_section(root: Path, write: bool) -> tuple[str, bool]:
+	"""Секция контура между маркерами = шаблон раскладки.
+
+	Возвращает (сообщение, разошлась ли). Правки вне маркеров не трогаются,
+	файл без маркеров не правится, отсутствие шаблона — пропуск с сообщением.
+	"""
+	agents = root / AGENTS
+	template = root / AGENTS_SECTION
+	if not agents.is_file():
+		return "AGENTS.md нет — секция не обновляется", False
+	if not template.is_file():
+		return "шаблона agents-section.md нет — секция не обновляется", False
+	text = agents.read_text(encoding="utf-8")
+	start = text.find(SECTION_BEGIN)
+	if start < 0:
+		return "маркеров секции контура нет — не трогаю (вставка — bootstrap)", False
+	end = text.find(SECTION_END, start)
+	if end < 0:
+		return "маркер BEGIN без END — не трогаю", False
+	newline = text.find("\n", end)
+	stop = len(text) if newline < 0 else newline + 1
+	block = template.read_text(encoding="utf-8").strip() + "\n"
+	if text[start:stop].strip() == block.strip():
+		return "секция AGENTS.md: без изменений", False
+	if write:
+		agents.write_text(text[:start] + block + text[stop:], encoding="utf-8")
+		return "секция AGENTS.md: обновлена из шаблона", True
+	return "РАСХОЖДЕНИЕ: секция AGENTS.md не совпадает с шаблоном", True
+
+
 def expected_config(root: Path, current: dict) -> dict:
 	"""Конфиг, который получился бы при wire (на копии текущего)."""
 	config = json.loads(json.dumps(current))
@@ -225,10 +267,16 @@ def main() -> int:
 	expect_dump = json.dumps(expect, sort_keys=True, ensure_ascii=False)
 
 	if "--check" in flags:
-		if json.dumps(current, sort_keys=True, ensure_ascii=False) == expect_dump:
+		config_ok = json.dumps(current, sort_keys=True, ensure_ascii=False) == expect_dump
+		agents_msg, agents_drift = sync_agents_section(root, write=False)
+		if config_ok and not agents_drift:
 			print("ок: контур подключён в .zcode/config.json")
+			print(agents_msg)
 			return 0
-		print("РАСХОЖДЕНИЕ: .zcode/config.json не совпадает с ожидаемой разводкой")
+		if not config_ok:
+			print("РАСХОЖДЕНИЕ: .zcode/config.json не совпадает с ожидаемой разводкой")
+		else:
+			print(agents_msg)
 		return 1
 
 	config_path = root / CONFIG
@@ -236,6 +284,7 @@ def main() -> int:
 	config_path.write_text(json.dumps(expect, ensure_ascii=False, indent="\t") + "\n",
 	                       encoding="utf-8")
 	print(f"разведено: {config_path}")
+	print(sync_agents_section(root, write=True)[0])
 	print("перезапусти сессию ZCode, чтобы hooks и MCP вступили в силу")
 	return 0
 

@@ -208,6 +208,45 @@ def main() -> int:
 		r = run_vendored("--check")
 		check("--check не создаёт contour.json", not c1.exists(), "файл появился")
 
+		# ── секция AGENTS.md: обновляется шаблоном (ишью #38) ──
+		tpl = root / ".zcode" / "1c" / "templates"
+		tpl.mkdir(parents=True, exist_ok=True)
+		(tpl / "agents-section.md").write_text(
+			"<!-- BEGIN 1C CONTOUR (1c-zcode) -->\n## Контур 1С\nНОВЫЙ КАНОН\n"
+			"<!-- END 1C CONTOUR -->\n", encoding="utf-8")
+		agents = root / "AGENTS.md"
+		agents.write_text(
+			"# Проект\nсвоё до секции\n"
+			"<!-- BEGIN 1C CONTOUR (1c-zcode) -->\nстарый канон 0.13\n"
+			"<!-- END 1C CONTOUR -->\nсвоё после секции\n", encoding="utf-8")
+		r = run_vendored()
+		text = agents.read_text(encoding="utf-8")
+		check("AGENTS.md: секция заменена шаблоном",
+		      "НОВЫЙ КАНОН" in text and "старый канон 0.13" not in text, text[:200])
+		check("AGENTS.md: текст вне маркеров сохранён",
+		      "своё до секции" in text and "своё после секции" in text, text[:200])
+		check("AGENTS.md: сообщение об обновлении", "обновлена из шаблона" in r.stdout, r.stdout[-200:])
+
+		before = agents.read_text(encoding="utf-8")
+		r = run_vendored()
+		check("AGENTS.md: повторный wire — без изменений",
+		      agents.read_text(encoding="utf-8") == before and "без изменений" in r.stdout,
+		      r.stdout[-200:])
+
+		agents.write_text(before.replace("НОВЫЙ КАНОН", "ПОДМЕНЁННЫЙ"), encoding="utf-8")
+		r = run_vendored("--check")
+		check("AGENTS.md: --check ловит дрейф секции (exit 1)",
+		      r.returncode == 1 and "РАСХОЖДЕНИЕ: секция" in r.stdout, r.stdout[-200:])
+		check("AGENTS.md: --check не пишет файл",
+		      "ПОДМЕНЁННЫЙ" in agents.read_text(encoding="utf-8"), "файл переписан")
+
+		no_markers = root / "no-markers.md"
+		agents.write_text("# Без маркеров\nсвоё\n", encoding="utf-8")
+		r = run_vendored()
+		check("AGENTS.md без маркеров не трогается",
+		      agents.read_text(encoding="utf-8") == "# Без маркеров\nсвоё\n"
+		      and "маркеров секции контура нет" in r.stdout, r.stdout[-200:])
+
 		return summary()
 
 
