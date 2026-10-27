@@ -27,20 +27,15 @@ import re
 import sqlite3
 from dataclasses import dataclass
 
+from kd_rules_mcp.kd2.bsl_text import bsl_code, statement_start, string_end, strip_comments
 from kd_rules_mcp.kd2.model import ExchangeRules, Node, RegistrationRules
 from kd_rules_mcp.structures.queries import (
     exchange_plan_autoregistration,
     read_object_card,
 )
 from kd_rules_mcp.structures.xmldump import KINDS
-from kd_rules_mcp.validation.address import rule_address
-from kd_rules_mcp.validation.exchange_plan import (
-    _assign_rhs,
-    _bsl_string,
-    _is_bare_name,
-    _skip_bsl_string,
-    _strip_comments,
-)
+from kd_rules_mcp.validation.address import pro_loaded, rule_address
+from kd_rules_mcp.validation.exchange_plan import _assign_rhs, _bsl_string, _is_bare_name
 from kd_rules_mcp.validation.report import ValidationReport
 
 # Вид метаданных → префикс имени типа КД (`Документ` → `ДокументСсылка.`).
@@ -206,7 +201,7 @@ def check_registration(
             return report
         # Согласованность ОбъектНастройки с видом не требует базы: её задаёт писатель.
         for rule in rules.rules():
-            if _loaded(rule):
+            if pro_loaded(rule):
                 _check_settings(report, rule, None)
                 _check_query_parameters(report, rules, rule)
         return report
@@ -218,7 +213,7 @@ def check_registration(
     elif plan is not None:
         report.skip("registration.plan_content", _NO_PLAN_CONTENT)
     for rule in rules.rules():
-        if not _loaded(rule):
+        if not pro_loaded(rule):
             continue
         obj = _check_object(report, rule, index, plan)
         if has_object_settings:
@@ -238,20 +233,6 @@ def check_registration(
     if not has_object_settings:
         report.skip("registration.settings_type", _NO_OBJECT_SETTINGS)
     return report
-
-
-def _loaded(rule: Node) -> bool:
-    """Правило попадёт в таблицу читателя.
-
-    `Отключить=true` или `Валидное=false` — поддерево пропускается
-    (ЗагрузкаПравилРегистрацииОбъектов:282-293). Пустой булев атрибут читается
-    как Ложь (там же, :1077-1078), поэтому отсутствующее `Валидное` тоже отбрасывает
-    правило. `Отключить` группы читатель не смотрит (:662-687) — вложенные правила
-    проверяются.
-    """
-    if rule.attrs.get("Отключить") is True:
-        return False
-    return rule.attrs.get("Валидное", False) is True
 
 
 def _title(rule: Node) -> str:
@@ -479,7 +460,7 @@ def _check_no_pvd(
     """
     covered = _enabled_pvd_types(exchange)
     with_rule = {
-        str(rule.get("ОбъектНастройки")).strip() for rule in rules.rules() if _loaded(rule)
+        str(rule.get("ОбъектНастройки")).strip() for rule in rules.rules() if pro_loaded(rule)
     }
     for type_name in sorted(plan.content):
         if type_name in covered:
@@ -514,7 +495,7 @@ def _enabled_pvd_types(rules: ExchangeRules) -> set[str]:
 def _address_for_type(rules: RegistrationRules, type_name: str, plan_name: str) -> str:
     """Адрес ПРО этого типа, если правило загружается; иначе адрес плана."""
     for rule in rules.rules():
-        if _loaded(rule) and str(rule.get("ОбъектНастройки")) == type_name:
+        if pro_loaded(rule) and str(rule.get("ОбъектНастройки")) == type_name:
             return rule_address(rule)
     return f"ПланОбмена «{plan_name}»"
 
@@ -701,9 +682,10 @@ def _check_query_parameters(report: ValidationReport, rules: RegistrationRules, 
         text = str(rule.get(event))
         if not text.strip():
             continue
-        cleaned = _strip_comments(text)
+        cleaned = strip_comments(text)
         address = rule_address(rule)
-        if _EXECUTE.search(cleaned) or _ALGORITHM_REF.search(cleaned):
+        code = bsl_code(text)
+        if _EXECUTE.search(code) or _ALGORITHM_REF.search(code):
             report.skip(
                 QUERY_PARAMETERS,
                 f"{address}: «{event}» собирает запрос кодом — параметры не сверяются",
@@ -776,7 +758,7 @@ def _query_parameter_names(query: str) -> list[str]:
     while index < length:
         char = query[index]
         if char == '"':
-            index = _skip_bsl_string(query, index)
+            index = string_end(query, index)
             continue
         if query.startswith("//", index):
             newline = query.find("\n", index)
@@ -837,12 +819,16 @@ def _bound_keys(code: str, initial: set[str]) -> set[str] | None:
     length = len(code)
     while index < length:
         if code[index] == '"':
-            index = _skip_bsl_string(code, index)
+            index = string_end(code, index)
             continue
         if lower.startswith(folded_name, index) and _is_bare_name(code, index, size):
             cursor = index + size
             while cursor < length and code[cursor] in " \t\r\n":
                 cursor += 1
+            if cursor < length and code[cursor] == "=" and not statement_start(code, index):
+                # Сравнение в условии: параметры запроса не меняются.
+                index = cursor + 1
+                continue
             if cursor < length and code[cursor] == "=":
                 replaced = _structure_keys(code, cursor + 1)
                 if replaced is None:
@@ -901,7 +887,7 @@ def _structure_keys(code: str, start: int) -> set[str] | None:
         return set()
     if cursor >= len(code) or code[cursor] != '"':
         return None
-    end = _skip_bsl_string(code, cursor)
+    end = string_end(code, cursor)
     inner = code[cursor + 1 : end - 1].replace('""', '"')
     return {part.strip() for part in inner.split(",") if part.strip()}
 
@@ -927,7 +913,7 @@ def _read_call(code: str, start: int) -> tuple[str, str | None, int] | None:
         cursor += 1
     argument: str | None = None
     if cursor < len(code) and code[cursor] == '"':
-        end = _skip_bsl_string(code, cursor)
+        end = string_end(code, cursor)
         argument = code[cursor + 1 : end - 1].replace('""', '"')
         cursor = end
     return name, argument, cursor

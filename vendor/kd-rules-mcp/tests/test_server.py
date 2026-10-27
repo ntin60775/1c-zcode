@@ -14,6 +14,8 @@ from kd_rules_mcp.kd2.model import ExchangeRules
 from kd_rules_mcp.kd2.rules_io import load_registration_rules
 from kd_rules_mcp.server import create_server
 from kd_rules_mcp.service import Kd2Service, PathMap, Settings
+from tests.sqlite_structure import StructureBuilder
+from tests.test_authoring_candidates import _composition_props
 from tests.test_ed_authoring_handlers import HANDLERS
 from tests.test_service_ed_authoring import handler_setup
 from tests.test_service_ed_authoring import setup as setup
@@ -151,6 +153,14 @@ async def test_registration_retarget_deletion_filter_tool(tmp_path: Path) -> Non
 
 
 EXPECTED_TOOLS = {
+    "live_base_check",
+    "live_status",
+    "live_rules_dump",
+    "live_rules_check",
+    "live_registration_check",
+    "live_rules_install",
+    "live_nodes_setup",
+    "live_exchange_run",
     "ed_authoring_candidates",
     "ed_authoring_build",
     "ed_create",
@@ -169,6 +179,7 @@ EXPECTED_TOOLS = {
     "ed_validate",
     "ed_close",
     "project_list",
+    "project_exchanges",
     "structure_load_project",
     "structure_list",
     "structure_load_xml",
@@ -195,6 +206,7 @@ EXPECTED_TOOLS = {
     "rule_update_many",
     "rule_delete",
     "pko_create_from_candidates",
+    "pko_create_many",
     "rules_validate",
     "rules_diff",
     "handlers_export",
@@ -203,6 +215,9 @@ EXPECTED_TOOLS = {
     "handlers_queries",
     "handlers_search",
     "handlers_read",
+    "handlers_context",
+    "reference_get",
+    "reference_search",
     "registration_build",
     "registration_retarget",
     "correspondent_draft",
@@ -469,6 +484,80 @@ async def test_rules_open_schema_has_private(service: Kd2Service) -> None:
     assert "private" not in tools["rules_open"].input_schema.get("required", [])
 
 
+async def test_pro_only_in_read_rule_kind_schema(service: Kd2Service) -> None:
+    async with Client(create_server(service)) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+    edits = "Kind: pko, pks, pks_group, pkz, pvd, pod, algorithm, query, parameter, conversion"
+    for name in ("rule_create", "rule_update", "rule_delete"):
+        assert tools[name].input_schema["properties"]["kind"]["description"] == edits
+    assert tools["rules_get"].input_schema["properties"]["kind"]["description"] == edits + ", pro"
+    assert tools["match_objects"].input_schema["properties"]["confidence"]["description"] == (
+        "Confidence: точно, синоним КД, по синониму, по составу, нет пары"
+    )
+    assert tools["match_properties"].input_schema["properties"]["confidence"]["description"] == (
+        "Confidence: точно, синоним КД, по синониму, нет пары"
+    )
+
+
+async def test_match_objects_composition(service: Kd2Service, monkeypatch) -> None:
+    for structure, renamed, extra in (
+        ("source", "Контрагенты", ()),
+        ("target", "Партнеры", ("Сайт",)),
+    ):
+        builder = StructureBuilder(service.store.path(structure))
+        builder.add("Справочник", "Точно")
+        builder.add(
+            "Справочник",
+            renamed,
+            _composition_props("ИНН", "КПП", "ОГРН", "Адрес", "Телефон", "ВидКонтрагента", *extra),
+        )
+        builder.conn.commit()
+        builder.conn.close()
+    arguments = {"source_structure": "source", "target_structure": "target"}
+    async with Client(create_server(service)) as client:
+        result = await _call(client, "match_objects", **arguments, confidence="по составу")
+        assert result["by_composition"] == {"pairs": 1, "ambiguous": 0}
+        assert result["total"] == 1
+        [row] = result["items"]
+        assert row["confidence"] == "по составу" and row["auto"] is False
+        assert row["source"] == "Справочник.Контрагенты"
+        assert row["target"] == "Справочник.Партнеры"
+        assert row["share"] == 0.86 and row["common"] == 6
+        filtered = await _call(client, "match_objects", **arguments, text="нет такого")
+        assert filtered["items"] == [] and filtered["total"] == 0
+        assert filtered["by_composition"] == result["by_composition"]
+        page = await _call(client, "match_objects", **arguments, limit=1)
+        assert page["total"] == 2 and page["has_more"] is True
+        assert page["by_composition"] == result["by_composition"]
+        # Пара «по составу» не числится «нет пары» и при фильтре этого класса.
+        unmatched = await _call(client, "match_objects", **arguments, confidence="нет пары")
+        assert unmatched["items"] == [] and unmatched["total"] == 0
+        assert unmatched["by_composition"] == result["by_composition"]
+        properties = await _error(
+            client,
+            "match_properties",
+            **arguments,
+            source_object="Справочник.Контрагенты",
+            target_object="Справочник.Партнеры",
+            confidence="по составу",
+        )
+        assert properties["code"] == "invalid_argument"
+        assert "match_objects" in properties["message"]
+
+        def unexpected_composition(*args, **kwargs):
+            pytest.fail("Состав не должен считаться при другом фильтре confidence")
+
+        monkeypatch.setattr(
+            "kd_rules_mcp.authoring.candidates._composition", unexpected_composition
+        )
+        exact = await _call(client, "match_objects", **arguments, confidence="точно")
+        assert "by_composition" not in exact
+        assert exact["total"] == 1 and exact["items"][0]["confidence"] == "точно"
+        assert "share" not in exact["items"][0] and "common" not in exact["items"][0]
+        error = await _error(client, "match_objects", **arguments, confidence="неизвестно")
+        assert error["code"] == "invalid_argument"
+
+
 async def test_tools_have_descriptions_and_parameter_schemas(service: Kd2Service) -> None:
     async with Client(create_server(service)) as client:
         tools = (await client.list_tools()).tools
@@ -477,6 +566,10 @@ async def test_tools_have_descriptions_and_parameter_schemas(service: Kd2Service
         assert tool.description, tool.name
         properties = tool.input_schema.get("properties", {})
         for name, schema in properties.items():
+            # offset/limit страницы описаны в INSTRUCTIONS один раз (бюджет схем, agent-ux Р1).
+            if name in {"offset", "limit"}:
+                assert schema.get("type") == "integer", f"{tool.name}.{name}"
+                continue
             assert schema.get("description"), f"{tool.name}.{name} без описания"
 
 
@@ -1114,6 +1207,9 @@ async def test_rule_update_many_sets_pks_flags(service: Kd2Service) -> None:
         assert updated["owner"] == "Организации"
         assert updated["kind"] == "pks"
         assert updated["count"] == 2
+        assert updated["mode"] == "apply"
+        assert updated["matched"] == 2
+        assert updated["changed"] == 2
         assert [item["address"] for item in updated["updated"]] == [
             "ПКО «Организации» / ПКС ИНН",
             "ПКО «Организации» / ПКС Контакты/Телефон",
@@ -1176,3 +1272,234 @@ async def test_rules_diff_pages_large_result(service: Kd2Service) -> None:
             "Наименование",
             "Комментарий",
         }
+
+
+async def test_rules_save_errors_json(service: Kd2Service) -> None:
+    """Отказ записи — JSON с code, errors и validation; acknowledge_errors виден в схеме."""
+    async with Client(create_server(service)) as client:
+        opened = await _call(client, "rules_open", path=str(DATA / "exchange_rules.xml"))
+        project = opened["project_id"]
+        await _call(
+            client,
+            "rule_update",
+            project_id=project,
+            kind="conversion",
+            key="",
+            fields={"ПередВыгрузкойДанных": "Выполнить(Алгоритмы.НетТакого);"},
+        )
+        error = await _error(client, "rules_save", project_id=project, path="out/bad.xml")
+        assert error["code"] == "rules_save_errors"
+        assert error["message"].startswith("Правила не записаны")
+        assert error["errors"]
+        assert set(error["errors"][0]) == {"level", "check", "address", "message"}
+        assert error["validation"]["errors"] >= 1
+        assert "structures" in error["validation"]
+        assert not (service.workspace.root / "out" / "bad.xml").is_file()
+
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+        schema = tools["rules_save"].input_schema
+        acknowledge = schema["properties"]["acknowledge_errors"]
+        assert acknowledge["type"] == "boolean"
+        assert acknowledge["default"] is False
+        assert acknowledge["description"] == "Write even if validation finds errors"
+        assert "acknowledge_errors" not in schema.get("required", [])
+        source = schema["properties"]["source_structure"]["description"]
+        assert source.endswith("default: last rules_validate")
+
+
+async def test_rule_update_many_pko_filter_preview_and_apply(service: Kd2Service) -> None:
+    """Фильтр ПКО: preview не помечает проект, apply помечает; ошибки — своими кодами."""
+    async with Client(create_server(service)) as client:
+        await _call(client, "structure_load_xml", structure_id="dump", configuration_path=str(DUMP))
+        created = await _call(
+            client, "rules_create", source_structure="dump", target_structure="dump"
+        )
+        project = created["project_id"]
+        await _call(
+            client,
+            "rule_create",
+            project_id=project,
+            kind="pko",
+            key="Контрагенты",
+            fields={
+                "Источник": "СправочникСсылка.Контрагенты",
+                "Приемник": "СправочникСсылка.Контрагенты",
+            },
+        )
+        await _call(
+            client,
+            "rule_create",
+            project_id=project,
+            kind="pko",
+            key="Приход",
+            fields={"Источник": "ДокументСсылка.Приход", "Приемник": "ДокументСсылка.Приход"},
+        )
+        await _call(client, "rules_save", project_id=project, path="out/filter.xml")
+        assert (await _call(client, "rules_overview", project_id=project))["modified"] is False
+
+        preview = await _call(
+            client,
+            "rule_update_many",
+            project_id=project,
+            kind="pko",
+            fields={"Комментарий": "пачка"},
+            filter={"source_kind": "Справочник"},
+            mode="preview",
+        )
+        assert "owner" not in preview
+        assert preview["mode"] == "preview"
+        assert preview["matched"] == 1
+        assert preview["changed"] == 1
+        assert preview["count"] == 1
+        assert preview["updated"][0]["changes"]["Комментарий"] == {"old": None, "new": "пачка"}
+        assert (await _call(client, "rules_overview", project_id=project))["modified"] is False
+        # Страница `updated` и одна на весь ответ фраза о непереданных структурах.
+        paged = await _call(
+            client,
+            "rule_update_many",
+            project_id=project,
+            kind="pko",
+            fields={"Комментарий": "пачка"},
+            filter={},
+            mode="preview",
+            limit=1,
+        )
+        assert (paged["matched"], len(paged["updated"]), paged["has_more"]) == (2, 1, True)
+        assert len(paged["skipped"]) == 2
+        assert "skipped" not in paged["updated"][0]
+        untouched = await _call(
+            client, "rules_get", project_id=project, kind="pko", key="Контрагенты"
+        )
+        assert "Комментарий" not in untouched["fields"]
+
+        applied = await _call(
+            client,
+            "rule_update_many",
+            project_id=project,
+            kind="pko",
+            fields={"Комментарий": "пачка"},
+            filter={"source_kind": "Справочник"},
+            mode="apply",
+            expected_count=1,
+        )
+        assert applied["mode"] == "apply"
+        assert applied["matched"] == 1
+        assert (await _call(client, "rules_overview", project_id=project))["modified"] is True
+        stored = await _call(client, "rules_get", project_id=project, kind="pko", key="Контрагенты")
+        assert stored["fields"]["Комментарий"] == "пачка"
+        document = await _call(client, "rules_get", project_id=project, kind="pko", key="Приход")
+        assert "Комментарий" not in document["fields"]
+
+        mismatch = await _error(
+            client,
+            "rule_update_many",
+            project_id=project,
+            kind="pko",
+            fields={"Комментарий": "другое"},
+            filter={"source_kind": "Справочник"},
+            expected_count=5,
+        )
+        assert mismatch["code"] == "count_mismatch"
+        assert mismatch["matched"] == 1
+        still = await _call(client, "rules_get", project_id=project, kind="pko", key="Контрагенты")
+        assert still["fields"]["Комментарий"] == "пачка"
+
+        invalid = await _error(
+            client,
+            "rule_update_many",
+            project_id=project,
+            kind="pko",
+            fields={"Комментарий": "x"},
+            filter={"nope": "Справочник"},
+        )
+        assert invalid["code"] == "invalid_argument"
+        missing = await _error(
+            client,
+            "rule_update_many",
+            project_id=project,
+            kind="pko",
+            fields={"Комментарий": "x"},
+            keys=["НетТакого"],
+        )
+        assert missing["code"] == "rule_not_found"
+        bad_mode = await _error(
+            client,
+            "rule_update_many",
+            project_id=project,
+            kind="pko",
+            fields={"Комментарий": "x"},
+            filter={},
+            mode="later",
+        )
+        assert bad_mode["code"] == "invalid_argument"
+
+
+async def test_pko_create_many_preview_then_apply(service: Kd2Service) -> None:
+    """Справочники тестовой выгрузки: preview, страница, apply без хеша и с хешем."""
+    async with Client(create_server(service)) as client:
+        await _call(client, "structure_load_xml", structure_id="dump", configuration_path=str(DUMP))
+        created = await _call(
+            client, "rules_create", source_structure="dump", target_structure="dump"
+        )
+        project = created["project_id"]
+        first = await _call(
+            client,
+            "pko_create_many",
+            project_id=project,
+            source_structure="dump",
+            target_structure="dump",
+            kind="Справочник",
+            offset=0,
+            limit=1,
+        )
+        second = await _call(
+            client,
+            "pko_create_many",
+            project_id=project,
+            source_structure="dump",
+            target_structure="dump",
+            kind="Справочник",
+            offset=1,
+            limit=1,
+        )
+        assert first["mode"] == "preview"
+        assert first["summary"]["planned"] == 3
+        assert first["summary"]["skipped"] == 0
+        assert first["preview_hash"] == second["preview_hash"]
+        assert first["has_more"] is True
+        assert first["total"] == 3
+        assert first["offset"] == 0
+        assert first["limit"] == 1
+        assert first["items"][0]["status"] == "planned"
+        assert first["items"][0]["code"] != second["items"][0]["code"]
+        assert (await _call(client, "rules_overview", project_id=project))["modified"] is False
+
+        refused = await _error(
+            client,
+            "pko_create_many",
+            project_id=project,
+            source_structure="dump",
+            target_structure="dump",
+            kind="Справочник",
+            mode="apply",
+        )
+        assert refused["code"] == "preview_required"
+        assert refused["preview_hash"] == first["preview_hash"]
+        assert (await _call(client, "rules_overview", project_id=project))["modified"] is False
+
+        applied = await _call(
+            client,
+            "pko_create_many",
+            project_id=project,
+            source_structure="dump",
+            target_structure="dump",
+            kind="Справочник",
+            mode="apply",
+            expected_preview_hash=first["preview_hash"],
+        )
+        assert applied["mode"] == "apply"
+        assert applied["summary"]["created"] == 3
+        assert applied["preview_hash"] == first["preview_hash"]
+        overview = await _call(client, "rules_overview", project_id=project)
+        assert overview["modified"] is True
+        assert overview["counts"]["pko"] == 3

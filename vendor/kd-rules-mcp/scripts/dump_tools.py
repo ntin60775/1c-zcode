@@ -24,7 +24,14 @@ import build_packs
 from mcp import Client
 
 from kd_rules_mcp.console import utf8_stdout
-from kd_rules_mcp.server import ERROR_CODES, create_server, error_payload
+from kd_rules_mcp.server import (
+    EFFECTS,
+    ERROR_CODES,
+    TOOL_EFFECTS,
+    create_server,
+    effect_tag,
+    error_payload,
+)
 from kd_rules_mcp.service import Kd2Service, Settings
 
 DOC = Path(__file__).resolve().parents[1] / "docs" / "tools.md"
@@ -35,6 +42,7 @@ END = "<!-- tools:end — manual reference below; not changed by the generator -
 GROUPS: dict[str, tuple[str, ...]] = {
     "Projects and configuration structures": (
         "project_list",
+        "project_exchanges",
         "structure_load_project",
         "structure_list",
         "structure_load_xml",
@@ -63,6 +71,7 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "rule_update_many",
         "rule_delete",
         "pko_create_from_candidates",
+        "pko_create_many",
     ),
     "Checks": (
         "rules_validate",
@@ -73,11 +82,23 @@ GROUPS: dict[str, tuple[str, ...]] = {
         "handlers_queries",
         "handlers_search",
         "handlers_read",
+        "handlers_context",
     ),
+    "Reference": ("reference_get", "reference_search"),
     "Registration and correspondent rules": (
         "registration_build",
         "registration_retarget",
         "correspondent_draft",
+    ),
+    "Live sandbox checks": (
+        "live_base_check",
+        "live_status",
+        "live_rules_dump",
+        "live_rules_check",
+        "live_registration_check",
+        "live_rules_install",
+        "live_nodes_setup",
+        "live_exchange_run",
     ),
     "EnterpriseData reader": (
         "ed_open",
@@ -105,11 +126,16 @@ GROUPS: dict[str, tuple[str, ...]] = {
 
 # Что значат дополнительные поля JSON ошибки (`error_payload` в server.py).
 EXTRA_FIELDS = {
+    "matched": "rules selected by keys or filter",
+    "preview_hash": "hash of the current batch; pass it as expected_preview_hash",
     "structures": "loaded configuration structures",
     "suggestions": "similar object names",
     "workspace": "workspace in agent paths",
     "writable": "all writable directories in agent paths",
 }
+
+# Поля страницы списка в схемах без описания (бюджет схем); в справочнике — этот текст.
+PAGE_FIELDS = {"offset": "Page offset", "limit": "Page size"}
 
 # «Когда» для кодов, у классов которых docstring чужой или уже узкий.
 WHEN = {
@@ -149,8 +175,16 @@ def _type(schema: dict[str, Any]) -> str:
     return str(kind)
 
 
+def _effect_line(name: str) -> str:
+    """Строка «Effect»: метка и, если есть, когда и куда инструмент пишет."""
+    effect, note = TOOL_EFFECTS[name]
+    return f"Effect: `{effect}`" + (f" — {note}." if note else ".")
+
+
 def _tool_section(tool: Any) -> list[str]:
-    lines = [f"### `{tool.name}`", "", inspect.cleandoc(tool.description or ""), ""]
+    # Метка в начале описания — та же, что в строке Effect; в справочнике её не повторяем.
+    description = inspect.cleandoc(tool.description or "").removeprefix(f"{effect_tag(tool.name)} ")
+    lines = [f"### `{tool.name}`", "", description, "", _effect_line(tool.name), ""]
     properties: dict[str, Any] = tool.input_schema.get("properties", {})
     required = set(tool.input_schema.get("required", []))
     if not properties:
@@ -162,9 +196,15 @@ def _tool_section(tool: Any) -> list[str]:
             if name in required
             else f"`{json.dumps(schema.get('default'), ensure_ascii=False)}`"
         )
-        description = _cell(schema.get("description", ""))
+        description = _cell(schema.get("description", "") or PAGE_FIELDS.get(name, ""))
         lines.append(f"| `{name}` | {_cell(_type(schema))} | {default} | {description} |")
     return [*lines, ""]
+
+
+def _group_effects(names: tuple[str, ...]) -> str:
+    """Метки инструментов группы без повторов, в порядке от чтения к записи в базу."""
+    found = {TOOL_EFFECTS[name][0] for name in names}
+    return ", ".join(f"`{effect}`" for effect in EFFECTS if effect in found)
 
 
 def _error_rows(service: Kd2Service) -> list[str]:
@@ -190,9 +230,10 @@ def render() -> str:
     if stale := sorted(set(grouped) - set(tools)):
         raise SystemExit(f"В GROUPS лишние инструменты: {', '.join(stale)}")
     lines = [BEGIN, "", f"Tools: {len(tools)}.", ""]
-    lines += ["| Group | Tools |", "|---|---|"]
+    lines += ["| Group | Effect | Tools |", "|---|---|---|"]
     lines += [
-        f"| {group} | {', '.join(f'[`{name}`](#{name})' for name in names)} |"
+        f"| {group} | {_group_effects(names)} | "
+        f"{', '.join(f'[`{name}`](#{name})' for name in names)} |"
         for group, names in GROUPS.items()
     ]
     lines.append("")

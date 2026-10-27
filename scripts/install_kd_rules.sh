@@ -20,7 +20,7 @@
 # Переменные: KD_RULES_STATION — другой путь станции.
 set -euo pipefail
 
-KD_PIN="1.3.0"
+KD_PIN="1.9.1"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 VENDOR="$HERE/../vendor/kd-rules-mcp"
 STATION="${KD_RULES_STATION:-$HOME/.local/share/1c-zcode/kd-rules-mcp}"

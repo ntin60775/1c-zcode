@@ -27,10 +27,13 @@
 ```bash
 # 1. Клон/фетч апстрима, проверить тег:
 git -C <клон> fetch --tags && git -C <клон> describe --tags
-# 2. Заменить копию (без .git):
-rsync -a --delete --exclude .git <клон>/ vendor/kd-rules-mcp/
+# 2. Заменить копию (без .git; UPSTREAM.md — наш файл, --delete
+#    без исключения снесёт его — проверено синком 27.10):
+rsync -a --delete --exclude .git --exclude UPSTREAM.md <клон>/ vendor/kd-rules-mcp/
 # 3. Гигиена: имена проектов владельца не утекли в новые тексты апстрима
-#    (grep по .forbidden-names.txt, включая vendor/).
+#    (grep по .forbidden-names.txt по НОВЫМ файлам vendor; нарицательные
+#    слова апстрима вроде «соглашение имён» на паттерн «Соглашени» —
+#    известный ложный класс, апстрим наши имена не знает)
 # 4. Прогнать тесты контура + lint скиллов; живая проба:
 #    scripts/install_kd_rules.sh && scripts/start_kd_rules.sh
 # 5. Пин в scripts/install_kd_rules.sh (KD_PIN) = новой версии
@@ -46,3 +49,4 @@ rsync -a --delete --exclude .git <клон>/ vendor/kd-rules-mcp/
 | Дата | Коммит апстрима | Версия апстрима | Что менялось у нас |
 |---|---|---|---|
 | 2026-10-21 | `f7a7f99` (v1.3.0) | 1.3.0 | создание вендор-копии: install/start-скрипты, разводка 1c-kd, скиллы kd2-*/kd3-* + 1c-kd-rules |
+| 2026-10-27 | v1.9.1 (8 релизов: 1.4.0–1.9.1) | 1.9.1 | rsync + пере-перенос скиллов (слой тот же: frontmatter + 4 замены kd-install); KD_PIN → 1.9.1; start-скрипту задан KD2_REFERENCE_DIR (справка reference_get/search, v1.8.0); в UPSTREAM.md rsync дополнен --exclude UPSTREAM.md (наш файл снесло --delete); гигиена: единственное срабатывание — «Соглашение имён» в docs/workflow.md, ложное (нарицательное апстрима на паттерн «Соглашени»); детали новых инструментов — скилл 1c-kd-rules |

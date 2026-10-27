@@ -21,7 +21,17 @@ from kd_rules_mcp.validation.call_graph import (
     validation_evidence,
 )
 from kd_rules_mcp.validation.exchange_plan import check_exchange_plan
-from kd_rules_mcp.validation.handlers import Handler, HandlerFile, handler_sources
+from kd_rules_mcp.validation.handlers import (
+    EVENT_AREAS,
+    HANDLER_GLOBALS,
+    HANDLER_NOTES,
+    HANDLER_PARAMS,
+    HANDLER_TEMPLATE_LINES,
+    Handler,
+    HandlerFile,
+    handler_area,
+    handler_sources,
+)
 from kd_rules_mcp.validation.structure import (
     check_structures,
     ref_only_pko_codes,
@@ -103,8 +113,45 @@ class ReviewMixin(ServiceBase):
                 "address": h.address,
                 "handler": h.event,
                 "file": loc.name,
+                "params": h.param_names,
                 **slice_rows(rows, offset, limit),
             }
+
+    def handlers_context(
+        self, kind: str | None = None, handler: str | None = None
+    ) -> dict[str, Any]:
+        """Параметры события по макету КД, глобальный контекст и расхождения с исполнителем БСП.
+
+        Проект правил не нужен: данные — `HANDLER_PARAMS` и соседние константы. Список событий
+        (39 коротких строк) отдаётся целиком, без страниц.
+        """
+        kinds = sorted({found for found, _tag in EVENT_AREAS})
+        if kind and kind not in kinds:
+            raise Kd2Error(f"Неизвестный вид «{kind}»; допустимые: {', '.join(kinds)}")
+        if not handler:
+            rows = [
+                {"kind": found, "handler": tag, "area": area, "params": len(HANDLER_PARAMS[area])}
+                for (found, tag), area in EVENT_AREAS.items()
+                if not kind or found == kind
+            ]
+            return {"items": rows, "total": len(rows)}
+        try:
+            found, tag, area = handler_area(kind, handler)
+        except KeyError:
+            allowed = sorted({t for k, t in EVENT_AREAS if not kind or k == kind})
+            scope = f" вида «{kind}»" if kind else " (без вида — имя области или однозначный тег)"
+            raise Kd2Error(
+                f"Неизвестное событие «{handler}»{scope}; допустимые: {', '.join(allowed)}"
+            ) from None
+        return {
+            "kind": found,
+            "handler": tag,
+            "area": area,
+            "template_lines": HANDLER_TEMPLATE_LINES[area],
+            "params": list(HANDLER_PARAMS[area]),
+            "globals": [asdict(item) for item in HANDLER_GLOBALS],
+            "notes": list(HANDLER_NOTES.get(area, ())),
+        }
 
     def handlers_search(
         self,
@@ -182,7 +229,16 @@ class ReviewMixin(ServiceBase):
                 )
             return slice_rows(rows, offset, limit)
 
-    def _trace_registration(self, project_id: str, object_name: str) -> dict[str, Any]:
+    def _trace_registration(
+        self, project_id: str, object_name: str, source: str = ""
+    ) -> dict[str, Any]:
+        """ПРО объекта из правил регистрации рядом с правилами обмена.
+
+        Правила регистрации работают в конфигурации-источнике (как в `rules_pack`): файл,
+        у которого `Конфигурация` другая, — правила обратного направления. Типично это
+        `CorrespondentExchangeRules.xml` рядом с `RegistrationRules.xml` своей базы. Такой
+        файл пропускается и называется в `skipped`, а не выдаётся за «ПРО нет».
+        """
         project = self.workspace.get(project_id)
         folder = project.source_path.parent if project.source_path else None
         documents: list[tuple[str, RegistrationRules]] = []
@@ -220,6 +276,18 @@ class ReviewMixin(ServiceBase):
                     documents.append((path.name, document))
             except (Kd2Error, OSError, ValueError) as error:
                 errors.append(f"{path.name}: {type(error).__name__}")
+        skipped: list[str] = []
+        matching: list[tuple[str, RegistrationRules]] = []
+        for origin, document in documents:
+            configuration = document.configuration_name
+            if source and configuration and configuration != source:
+                skipped.append(
+                    f"{origin}: правила регистрации конфигурации {configuration}, "
+                    f"а правила обмена выгружают из {source}"
+                )
+                continue
+            matching.append((origin, document))
+        documents = matching
         rows: list[dict[str, Any]] = []
         for origin, document in documents:
             nodes = document.rules()
@@ -232,7 +300,12 @@ class ReviewMixin(ServiceBase):
                             "node_mode_value": "unknown",
                         }
                     )
-        return {"available": bool(documents), "items": rows, "read_errors": errors}
+        return {
+            "available": bool(documents),
+            "items": rows,
+            "read_errors": errors,
+            "skipped": skipped,
+        }
 
     def rules_trace(
         self,
@@ -421,7 +494,8 @@ class ReviewMixin(ServiceBase):
                 )
             ]
             registrations = [
-                self._trace_registration(project_id, name) for name in sorted(object_names)
+                self._trace_registration(project_id, name, rules.source_name)
+                for name in sorted(object_names)
             ]
             unique_calls: dict[tuple[Any, ...], dict[str, Any]] = {}
             roots = {rule_address(by_code[code]) for code in seen}
@@ -453,6 +527,7 @@ class ReviewMixin(ServiceBase):
                     "available": any(r["available"] for r in registrations),
                     **slice_rows([row for r in registrations for row in r["items"]], offset, limit),
                     "read_errors": [e for r in registrations for e in r["read_errors"]],
+                    "skipped": sorted({s for r in registrations for s in r["skipped"]}),
                 },
                 "branches": slice_rows(branches, offset, limit),
                 "pko": slice_rows(

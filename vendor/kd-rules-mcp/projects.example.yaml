@@ -37,6 +37,8 @@ projects:
         connection: Srvr="server1c";Ref="bp_dev";
         dev_env: .dev.env
         data_mcp: 1c-data-mcp
+        # Необязательно: имя инструмента и аргумента исполнения кода.
+        data_access: {tool: vcexecutecode, argument: bslcode}
       bp_prod:
         role: боевая
         configuration: full
@@ -83,5 +85,15 @@ shared_mcp:
 exchanges:
   - plan: ОбменБухгалтерияПредприятияДокументооборот20
     projects: [bp, do]
+    id: bp-do
+    technology: kd2
+    # Без directions — оба направления. Пути комплектов — от папок проектов; без rules —
+    # <rules_dir проекта>/<план стороны>, если rules_dir задан.
+    sides:
+      - project: bp
+        base: bp_dev
+        rules: ПравилаОбмена/ОбменБухгалтерияПредприятияДокументооборот20
+      - project: do
+        base: do_dev
   - plan: ОбменЗарплата3Бухгалтерия3
     projects: [bp, zup]

@@ -119,9 +119,13 @@ start)
 	fi
 	cd "$STATION"
 	echo "→ поднимаю $URL (лог: $LOG)"
+	# KD2_REFERENCE_DIR: справка reference_get/reference_search читает тексты
+	# скиллов при вызове; без переменной на source-установке инструменты
+	# молча пусты (с 1.8.0)
 	KD2_HOST="$HOST" KD2_PORT="$PORT" \
 	KD2_PROJECTS_FILE="$STATION/projects.yaml" \
 	KD2_WORKSPACE="$STATION/workspace" KD2_CACHE_DIR="$STATION/cache" \
+	KD2_REFERENCE_DIR="$STATION/.claude/skills" \
 	setsid nohup uv run --no-sync kd-rules-mcp >>"$LOG" 2>&1 &
 	pid=$!
 	echo "$pid" >"$PIDFILE"

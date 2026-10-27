@@ -13,6 +13,8 @@
 нет ничего, кроме этих файлов, и нет каталогов. Файлы кладутся байт в байт — архив равен папке.
 """
 
+import base64
+import hashlib
 import zipfile
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -39,22 +41,29 @@ FORM_SET = (
 
 @dataclass(frozen=True, slots=True)
 class PackedFile:
-    """Файл в архиве: имя внутри, откуда взят, размер и что в нём."""
+    """Файл в архиве: имя внутри, откуда взят, размер, base64 SHA-256 байтов и что в нём."""
 
     name: str
     source: Path
     size_bytes: int
     summary: dict[str, str]
+    sha256: str
 
 
 @dataclass(frozen=True, slots=True)
 class PackResult:
-    """Собранный архив."""
+    """Собранный архив и base64 SHA-256 его байтов."""
 
     path: Path
     files: list[PackedFile]
     form: str
     warnings: list[str] = field(default_factory=list)
+    sha256: str = ""
+
+
+def sha256_base64(data: bytes) -> str:
+    """Отпечаток в той же форме, что `hash` правил у live_rules_dump/live_status (base64)."""
+    return base64.b64encode(hashlib.sha256(data).digest()).decode("ascii")
 
 
 def collect(folder: Path | None, explicit: Mapping[str, Path | None]) -> dict[str, Path]:
@@ -101,17 +110,28 @@ def pack_rules(
     if destination.exists() and not overwrite:
         raise Kd2Error(f"Файл «{destination}» уже существует; замена только при overwrite=True")
     destination.parent.mkdir(parents=True, exist_ok=True)
+    packed: list[PackedFile] = []
     with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as archive:
         for role in ROLES:
-            if role in files:
-                archive.write(files[role], ROLES[role])
-    packed = [
-        PackedFile(ROLES[role], files[role], files[role].stat().st_size, _summary(documents[role]))
-        for role in ROLES
-        if role in files
-    ]
+            if role not in files:
+                continue
+            # Байты читаются один раз: хеш — ровно того, что легло в архив.
+            data = files[role].read_bytes()
+            info = zipfile.ZipInfo.from_file(files[role], ROLES[role])
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, data)
+            packed.append(
+                PackedFile(
+                    ROLES[role],
+                    files[role],
+                    len(data),
+                    _summary(documents[role]),
+                    sha256_base64(data),
+                )
+            )
     form = FORM_SET if "registration" in files else FORM_CONVERSION
-    return PackResult(destination, packed, form, _warnings(documents))
+    digest = sha256_base64(destination.read_bytes())
+    return PackResult(destination, packed, form, _warnings(documents), digest)
 
 
 def _summary(document: ExchangeRules | RegistrationRules) -> dict[str, str]:
@@ -121,13 +141,8 @@ def _summary(document: ExchangeRules | RegistrationRules) -> dict[str, str]:
     return {
         "name": name,
         "exchange_plan": document.exchange_plan,
-        "configuration": _registration_configuration(document),
+        "configuration": document.configuration_name,
     }
-
-
-def _registration_configuration(document: RegistrationRules) -> str:
-    node = document.root.child("Конфигурация")
-    return (node.text or "").strip() if node is not None else ""
 
 
 def _warnings(documents: Mapping[str, ExchangeRules | RegistrationRules]) -> list[str]:
@@ -143,7 +158,7 @@ def _warnings(documents: Mapping[str, ExchangeRules | RegistrationRules]) -> lis
         )
     registration = documents.get("registration")
     if isinstance(registration, RegistrationRules):
-        configuration = _registration_configuration(registration)
+        configuration = registration.configuration_name
         if configuration and configuration != exchange.source_name:
             warnings.append(
                 f"Правила регистрации — для конфигурации {configuration}, "

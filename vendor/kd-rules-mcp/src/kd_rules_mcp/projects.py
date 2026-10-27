@@ -12,9 +12,11 @@
 """
 
 import base64
+import ipaddress
 import json
 import re
-from dataclasses import dataclass, field
+from collections import Counter
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +54,14 @@ class Configuration:
 
 
 @dataclass(frozen=True, slots=True)
+class DataAccess:
+    """Имя инструмента исполнения кода и его строкового аргумента."""
+
+    tool: str = "vcexecutecode"
+    argument: str = "bslcode"
+
+
+@dataclass(frozen=True, slots=True)
 class Base:
     """Информационная база проекта."""
 
@@ -63,6 +73,7 @@ class Base:
     data_mcp: str = ""
     # .dev.env проекта (от папки проекта) с IB_USER / IB_PASSWORD этой базы — логин для проверок.
     dev_env: str = ""
+    data_access: DataAccess = field(default_factory=DataAccess)
 
     @property
     def is_sandbox(self) -> bool:
@@ -86,11 +97,35 @@ class Project:
 
 
 @dataclass(frozen=True, slots=True)
+class ExchangeSide:
+    """Сторона обмена: база, план и источник правил.
+
+    `rules` без явного значения в профиле КД 2 — `<rules_dir проекта>/<план стороны>`;
+    тогда `rules_default` истинен.
+    """
+
+    project: str
+    base: str | None = None
+    plan: str = ""
+    rules: str | None = None
+    module: str | None = None
+    rules_default: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class Exchange:
     """План обмена и проекты, между которыми он работает."""
 
     plan: str
     projects: tuple[str, ...]
+    id: str = ""
+    technology: str | None = None
+    sides: tuple[ExchangeSide, ...] = ()
+    directions: tuple[tuple[str, str], ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            object.__setattr__(self, "id", self.plan)
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +136,14 @@ class Catalog:
     exchanges: tuple[Exchange, ...] = ()
     shared_mcp_from: str = ""
     shared_mcp: tuple[str, ...] = ()
+
+    def exchange(self, exchange_id: str) -> Exchange:
+        """Обмен по id или ошибка со списком известных."""
+        for item in self.exchanges:
+            if item.id == exchange_id:
+                return item
+        known = ", ".join(item.id for item in self.exchanges) or "нет"
+        raise ProjectConfigError(f"Обмена «{exchange_id}» нет в projects.yaml (есть: {known})")
 
     def project(self, project_id: str) -> Project:
         """Проект по идентификатору или ошибка со списком известных."""
@@ -152,6 +195,8 @@ class LocalSettings:
     port: int | None = None
     # Суффикс второго экземпляра на машине; None — имена контейнера, тома и проекта по умолчанию.
     instance: str | None = None
+    # None — поле не задано; в образе это повод подсказать про неперечисленные адреса.
+    host_addresses: tuple[str, ...] | None = None
 
     def login(self, project_id: str, base_id: str) -> tuple[str, str] | None:
         """Пользователь и пароль базы, если заданы."""
@@ -164,6 +209,35 @@ def with_login(connection: str, login: tuple[str, str] | None) -> str:
         return connection
     user, password = login
     return f'{connection.rstrip(";")};Usr="{user}";Pwd="{password}";'
+
+
+_LOGIN_KEYS = frozenset({"usr", "pwd"})
+
+
+def without_login(connection: str) -> str:
+    """Строка соединения без пар `Usr`/`Pwd`: для Конфигуратора, без логина и пароля.
+
+    Пары делятся `;` вне двойных кавычек (`""` внутри кавычек — сама кавычка); ключ сравнивается
+    без учёта регистра и пробелов. Остальные пары остаются как были, в конце — `;`.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    quoted = False
+    for char in connection:
+        if char == '"':
+            quoted = not quoted
+        if char == ";" and not quoted:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(char)
+    parts.append("".join(current))
+    kept = [
+        part.strip()
+        for part in parts
+        if part.strip() and part.split("=", 1)[0].strip().casefold() not in _LOGIN_KEYS
+    ]
+    return "".join(f"{part};" for part in kept)
 
 
 def base_login(local: LocalSettings, project_id: str, base: Base) -> tuple[str, str] | None:
@@ -277,16 +351,7 @@ def load_catalog(path: Path) -> Catalog:
         str(project_id): _project(str(project_id), body)
         for project_id, body in _mapping(data.get("projects"), "projects").items()
     }
-    exchanges = tuple(
-        Exchange(str(item.get("plan", "")), tuple(str(p) for p in item.get("projects", ())))
-        for item in data.get("exchanges", ()) or ()
-    )
-    for exchange in exchanges:
-        for project_id in exchange.projects:
-            if project_id not in projects:
-                raise ProjectConfigError(
-                    f"Обмен «{exchange.plan}» ссылается на неизвестный проект «{project_id}»"
-                )
+    exchanges = _exchanges(data.get("exchanges"), projects)
     shared = _mapping(data.get("shared_mcp") or {}, "shared_mcp")
     return Catalog(
         projects=projects,
@@ -294,6 +359,156 @@ def load_catalog(path: Path) -> Catalog:
         shared_mcp_from=str(shared.get("from", "")),
         shared_mcp=tuple(str(name) for name in shared.get("names", ()) or ()),
     )
+
+
+def _profile_text(value: Any, address: str) -> str:
+    """Поля профиля — непустые строки, опечатка типа не становится значением."""
+    if not isinstance(value, str) or not value.strip():
+        raise ProjectConfigError(f"{address}: нужна непустая строка")
+    return value
+
+
+def _profile_keys(body: dict, allowed: set[str], address: str) -> None:
+    for key in body:
+        if key not in allowed:
+            raise ProjectConfigError(f"{address}.{key}: неизвестный ключ «{key}»")
+
+
+def _exchanges(value: Any, projects: dict[str, Project]) -> tuple[Exchange, ...]:
+    """Разбор профилей с адресными отказами и совместимостью повторяющихся планов."""
+    # Прежний разбор принимал любое пустое значение (`exchanges: {}`) как отсутствие обменов.
+    if not value:
+        return ()
+    if not isinstance(value, list):
+        raise ProjectConfigError("exchanges: нужен список")
+    bodies = [_mapping(item, f"exchanges[{i}]") for i, item in enumerate(value)]
+    counts = Counter(str(body.get("plan", "")) for body in bodies)
+    result = []
+    seen = set()
+    for i, body in enumerate(bodies):
+        address = f"exchanges[{i}] ({body.get('plan', '')})"
+        _profile_keys(
+            body, {"plan", "projects", "id", "technology", "sides", "directions"}, address
+        )
+        plan = _profile_text(body.get("plan"), f"{address}.plan")
+        technology = body.get("technology")
+        if technology is not None and technology not in ("kd2", "ed"):
+            raise ProjectConfigError(
+                f"{address}.technology: неизвестная технология; нужны kd2 или ed"
+            )
+        sides = []
+        if "sides" in body:
+            raw_sides = body["sides"]
+            if not isinstance(raw_sides, list) or len(raw_sides) != 2:
+                raise ProjectConfigError(f"{address}.sides: нужны ровно две стороны")
+            for j, raw in enumerate(raw_sides):
+                at = f"{address}.sides[{j}]"
+                side = _mapping(raw, at)
+                _profile_keys(side, {"project", "base", "plan", "rules", "module"}, at)
+                project_id = _profile_text(side.get("project"), f"{at}.project")
+                if project_id not in projects:
+                    raise ProjectConfigError(f"{at}.project: неизвестный проект «{project_id}»")
+                fields = {
+                    key: _profile_text(side[key], f"{at}.{key}")
+                    for key in ("base", "plan", "rules", "module")
+                    if key in side
+                }
+                if "rules" in fields and not _relative_path(fields["rules"]):
+                    raise ProjectConfigError(
+                        f"{at}.rules: путь от папки проекта, без «..» и без диска"
+                    )
+                if "base" in fields and fields["base"] not in projects[project_id].bases:
+                    raise ProjectConfigError(
+                        f"{at}.base: неизвестная база «{fields['base']}» проекта «{project_id}»"
+                    )
+                incompatible = (
+                    "rules" if technology == "ed" else "module" if technology == "kd2" else None
+                )
+                if incompatible in fields:
+                    raise ProjectConfigError(
+                        f"{at}.{incompatible}: недопустимо при technology: {technology}"
+                    )
+                sides.append(
+                    ExchangeSide(
+                        project_id,
+                        base=fields.get("base"),
+                        plan=fields.get("plan", plan),
+                        rules=fields.get("rules"),
+                        module=fields.get("module"),
+                    )
+                )
+            if sides[0].project == sides[1].project:
+                raise ProjectConfigError(f"{address}.sides: одинаковые проекты сторон")
+            # Папка комплекта по умолчанию — папка плана в живых правилах проекта. Модуль у
+            # какой-либо стороны — признак универсального формата, там комплекта КД 2 нет.
+            if technology != "ed" and not any(side.module for side in sides):
+                sides = [_default_rules(side, projects) for side in sides]
+        raw_projects = body.get("projects", [s.project for s in sides])
+        if not isinstance(raw_projects, list):
+            raise ProjectConfigError(f"{address}.projects: нужен список проектов")
+        members = tuple(_profile_text(p, f"{address}.projects") for p in raw_projects)
+        for project_id in members:
+            if project_id not in projects:
+                raise ProjectConfigError(f"{address}.projects: неизвестный проект «{project_id}»")
+        if sides and members != tuple(s.project for s in sides):
+            raise ProjectConfigError(f"{address}.projects: расходятся со сторонами или их порядком")
+        directions = []
+        if "directions" in body and not sides:
+            raise ProjectConfigError(f"{address}.directions: нельзя без sides")
+        raw_directions = body.get(
+            "directions", [list(members), list(reversed(members))] if sides else []
+        )
+        if not isinstance(raw_directions, list):
+            raise ProjectConfigError(f"{address}.directions: нужен список пар")
+        for j, pair in enumerate(raw_directions):
+            at = f"{address}.directions[{j}]"
+            if (
+                not isinstance(pair, list)
+                or len(pair) != 2
+                or any(p not in members for p in pair)
+                or pair[0] == pair[1]
+            ):
+                raise ProjectConfigError(f"{at}: нужна пара разных проектов сторон")
+            direction = (pair[0], pair[1])
+            if direction in directions:
+                raise ProjectConfigError(f"{at}: повтор направления")
+            directions.append(direction)
+        if sides and not directions:
+            raise ProjectConfigError(f"{address}.directions: нужно хотя бы одно направление")
+        default_id = plan if counts[plan] == 1 else f"{plan}@{'+'.join(members)}"
+        if "id" not in body:
+            # Прежние файлы с одинаковыми элементами читаются: повтору — номер.
+            number, candidate = 2, default_id
+            while candidate in seen:
+                candidate, number = f"{default_id}#{number}", number + 1
+            default_id = candidate
+        exchange_id = _profile_text(body.get("id", default_id), f"{address}.id")
+        if exchange_id in seen:
+            raise ProjectConfigError(f"{address}.id: одинаковые id «{exchange_id}»")
+        seen.add(exchange_id)
+        result.append(
+            Exchange(plan, members, exchange_id, technology, tuple(sides), tuple(directions))
+        )
+    return tuple(result)
+
+
+def _relative_path(value: str) -> bool:
+    """Путь от папки проекта: без корня, диска и «..»."""
+    path = value.replace("\\", "/")
+    return not (path.startswith("/") or re.match(r"^[A-Za-z]:", path) or ".." in path.split("/"))
+
+
+def _default_rules(side: ExchangeSide, projects: dict[str, Project]) -> ExchangeSide:
+    """Сторона без явного `rules` — `<rules_dir>/<план стороны>`, если `rules_dir` задан.
+
+    `rules_dir` с диском или «..» значения по умолчанию не даёт: прежде такой каталог читался,
+    отказ ломал бы его; явный `rules` для стороны по-прежнему проверяется строго.
+    """
+    rules_dir = projects[side.project].rules_dir
+    if side.rules is not None or not rules_dir or not _relative_path(rules_dir):
+        return side
+    rules = f"{rules_dir.replace(chr(92), '/').rstrip('/')}/{side.plan}"
+    return replace(side, rules=rules, rules_default=True)
 
 
 def load_local(path: Path) -> LocalSettings:
@@ -328,7 +543,28 @@ def load_local(path: Path) -> LocalSettings:
         token=token,
         port=_optional_port(data.get("port")),
         instance=_instance_name(data.get("instance")),
+        host_addresses=_host_addresses(data.get("host_addresses")),
     )
+
+
+def _host_addresses(value: Any) -> tuple[str, ...] | None:
+    """Явные адреса машины: только хосты, без URL, портов и авторизации."""
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise ProjectConfigError("host_addresses: нужен список адресов или имён хоста")
+    result = []
+    for item in value:
+        if not isinstance(item, str) or not item:
+            raise ProjectConfigError("host_addresses: нужны непустые адреса или имена хоста")
+        try:
+            normalized = str(ipaddress.ip_address(item))
+        except ValueError:
+            if re.fullmatch(r"[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*", item) is None:
+                raise ProjectConfigError("host_addresses: укажите хост без URL и порта") from None
+            normalized = item.lower()
+        result.append(normalized)
+    return tuple(result)
 
 
 def _optional_text(value: Any) -> str | None:
@@ -422,7 +658,14 @@ def _project(project_id: str, body: Any) -> Project:
             raise ProjectConfigError(f"У базы {project_id}.{base_id} нет «connection»")
         data_mcp = str(item.get("data_mcp") or "").strip()
         dev_env = str(item.get("dev_env") or "").strip()
-        bases[str(base_id)] = Base(str(base_id), role, config_id, connection, data_mcp, dev_env)
+        access = _mapping(item.get("data_access") or {}, "data_access")
+        if set(access) - {"tool", "argument"} or any(
+            not isinstance(v, str) or not v.strip() for v in access.values()
+        ):
+            raise ProjectConfigError("data_access: нужны непустые tool и argument")
+        bases[str(base_id)] = Base(
+            str(base_id), role, config_id, connection, data_mcp, dev_env, DataAccess(**access)
+        )
     return Project(
         id=project_id,
         name=str(data.get("name", project_id)),

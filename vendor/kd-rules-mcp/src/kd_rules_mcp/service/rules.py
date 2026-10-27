@@ -5,6 +5,7 @@ from typing import Any
 
 from kd_rules_mcp.authoring.edits import (
     CONVERSION_KIND,
+    create_pko_many,
     create_pko_with_properties,
     create_rule,
     delete_rule,
@@ -13,17 +14,19 @@ from kd_rules_mcp.authoring.edits import (
     update_rules,
 )
 from kd_rules_mcp.authoring.pack import collect, pack_rules
-from kd_rules_mcp.errors import Kd2Error
+from kd_rules_mcp.authoring.workspace import RulesProject
+from kd_rules_mcp.errors import Kd2Error, RulesSaveErrorsError
 from kd_rules_mcp.kd2.diff import SECTIONS, RuleChange, diff_rules, ignored_header_fields
 from kd_rules_mcp.kd2.model import ExchangeRules, RegistrationRules, RulesDocument
 from kd_rules_mcp.kd2.rules_io import load_rules
 from kd_rules_mcp.service.base import ServiceBase
+from kd_rules_mcp.service.checks import validation_report
 from kd_rules_mcp.service.views import (
     PKS_SECTION,
     REGISTRATION_SECTION,
+    batch_update_view,
     conversion_view,
     counts,
-    edit_view,
     find_pro,
     listed_rule_rows,
     node_view,
@@ -31,12 +34,46 @@ from kd_rules_mcp.service.views import (
     overview_groups,
     page_limit,
     parse_detail,
+    pko_batch_view,
     pro_view,
     report_summary,
     rule_group,
     slice_rows,
 )
-from kd_rules_mcp.validation.format import check_format
+from kd_rules_mcp.validation.report import ValidationReport
+
+# Столько ошибок проверки попадает в отказ и в ответ записи с подтверждением.
+_SAVE_ERRORS_LIMIT = 50
+
+
+def _used_structures(
+    source_id: str | None,
+    target_id: str | None,
+    exchange_id: str | None,
+) -> dict[str, str | None]:
+    """Идентификаторы, которые проверка открыла. Пустая строка — стороны не было.
+
+    `exchange_project` — парный проект комплекта: правила обмена у правил регистрации
+    и правила регистрации у правил обмена.
+    """
+    return {
+        "source": source_id or None,
+        "target": target_id or None,
+        "exchange_project": exchange_id or None,
+    }
+
+
+def _validation_view(
+    report: ValidationReport,
+    structures: dict[str, str | None],
+    dropped: list[str],
+) -> dict[str, Any]:
+    """Итог `report_summary` плюс фактически открытые структуры и отброшенные идентификаторы."""
+    view = report_summary(report)
+    view["structures"] = structures
+    if dropped:
+        view["dropped"] = dropped
+    return view
 
 
 class RulesMixin(ServiceBase):
@@ -129,23 +166,98 @@ class RulesMixin(ServiceBase):
             node = find_rule(document, kind, key, owner)
             return node_view(node, page_limit(limit), rule_group(document, node))
 
-    def rules_save(self, project_id: str, path: str, overwrite: bool) -> dict[str, Any]:
+    def rules_save(
+        self,
+        project_id: str,
+        path: str,
+        overwrite: bool,
+        acknowledge_errors: bool = False,
+        source_structure: str | None = None,
+        target_structure: str | None = None,
+        exchange_project_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Проверяет правила как `rules_validate` и пишет XML. Ошибки без подтверждения — отказ.
+
+        Сначала путь и `overwrite`, затем проверка. Запись с ошибками — только при
+        `acknowledge_errors`. Без явной тройки структур берётся последняя успешная
+        `rules_validate` этого проекта; пропавшие из кэша отбрасываются.
+        """
         with self._lock:
-            saved = self.workspace.save(
-                project_id,
-                self._writable(path),
-                overwrite=overwrite,
-                allowed=list(self.rules_dirs().values()),
-            )
+            allowed = list(self.rules_dirs().values())
+            local = self._writable(path)
+            self.workspace.check_destination(local, overwrite=overwrite, allowed=allowed)
             document = self._document(project_id)
-            report = check_format(document)
-            return {
+            project = self.workspace.get(project_id)
+            source_id, target_id, exchange_id, dropped = self._validation_inputs(
+                project, source_structure, target_structure, exchange_project_id
+            )
+            with self._sides(source_id, target_id) as (source, target):
+                paired = self._paired(document, exchange_id, project.source_path)
+                report = validation_report(document, source, target, project.source_path, paired)
+            validation = _validation_view(
+                report,
+                _used_structures(source_id, target_id, exchange_id),
+                dropped,
+            )
+            error_items = [issue.to_dict() for issue in report.errors]
+            if error_items and not acknowledge_errors:
+                raise RulesSaveErrorsError(
+                    f"Правила не записаны: ошибок проверки {len(error_items)}. "
+                    "Исправьте их или повторите с acknowledge_errors=true",
+                    {
+                        "validation": validation,
+                        "errors": error_items[:_SAVE_ERRORS_LIMIT],
+                        "errors_total": len(error_items),
+                    },
+                )
+            saved = self.workspace.save(project_id, local, overwrite=overwrite, allowed=allowed)
+            result: dict[str, Any] = {
                 "project_id": project_id,
                 "path": self._host(saved),
                 "size_bytes": saved.stat().st_size,
                 "counts": counts(document),
-                "format_check": report_summary(report),
+                "validation": validation,
+                "saved_with_errors": bool(error_items),
             }
+            if error_items:
+                result["errors"] = error_items[:_SAVE_ERRORS_LIMIT]
+                result["errors_total"] = len(error_items)
+            return result
+
+    def _validation_inputs(
+        self,
+        project: RulesProject,
+        source_structure: str | None,
+        target_structure: str | None,
+        exchange_project_id: str | None,
+    ) -> tuple[str | None, str | None, str | None, list[str]]:
+        """Явная тройка целиком, если передан хотя бы один аргумент; иначе запомненная.
+
+        Пустой идентификатор — сторона не задана. Запомненная структура, которой нет в кэше,
+        и проект обмена, которого уже нет среди открытых, отбрасываются. Явно переданная
+        неизвестная структура здесь не проверяется: её откроет `_sides`, как в `rules_validate`.
+        """
+        if (
+            source_structure is not None
+            or target_structure is not None
+            or exchange_project_id is not None
+        ):
+            return source_structure, target_structure, exchange_project_id, []
+        remembered = project.validation_inputs
+        if remembered is None:
+            return None, None, None, []
+        source, target, exchange = remembered
+        dropped: list[str] = []
+        if source and not self.store.exists(source):
+            dropped.append(f"source:{source}")
+            source = None
+        if target and not self.store.exists(target):
+            dropped.append(f"target:{target}")
+            target = None
+        if exchange and exchange not in self.workspace.ids():
+            dropped.append(f"exchange_project:{exchange}")
+            exchange = None
+        return source, target, exchange, dropped
 
     def rules_pack(
         self,
@@ -174,12 +286,14 @@ class RulesMixin(ServiceBase):
             return {
                 "path": self._host(result.path),
                 "size_bytes": result.path.stat().st_size,
+                "sha256": result.sha256,
                 "load_with": result.form,
                 "files": [
                     {
                         "file": item.name,
                         "path": self._host(item.source),
                         "size_bytes": item.size_bytes,
+                        "sha256": item.sha256,
                         "rules": item.summary,
                     }
                     for item in result.files
@@ -199,19 +313,29 @@ class RulesMixin(ServiceBase):
         self,
         project_id: str,
         kind: str,
-        owner: str,
         fields: Mapping[str, Any],
-        keys: list[str] | None,
-        except_keys: list[str] | None,
-        source_structure: str | None,
-        target_structure: str | None,
+        owner: str = "",
+        keys: list[str] | None = None,
+        except_keys: list[str] | None = None,
+        filter: dict[str, Any] | None = None,
+        mode: str = "apply",
+        expected_count: int | None = None,
+        source_structure: str | None = None,
+        target_structure: str | None = None,
+        offset: int = 0,
+        limit: int = 200,
     ) -> dict[str, Any]:
-        """Одни поля у нескольких ПКС, групп ПКС или ПКЗ. Отказ не помечает проект изменённым."""
+        """Одни поля у нескольких правил одного вида. Отказ не помечает проект изменённым.
+
+        `preview` выполняет ту же правку и возвращает документ. Проект меняется только в `apply`.
+        """
+        if mode not in ("apply", "preview"):
+            raise ValueError(f"Режим «{mode}» не принимается. Допустимые: apply, preview")
         if not fields:
             raise Kd2Error("Не переданы поля для изменения")
         with self._lock, self._sides(source_structure, target_structure) as (source, target):
             rules = self._exchange(project_id)
-            results = update_rules(
+            batch = update_rules(
                 rules,
                 kind,
                 fields,
@@ -220,14 +344,51 @@ class RulesMixin(ServiceBase):
                 except_keys=() if except_keys is None else except_keys,
                 source=source,
                 target=target,
+                filter=filter,
+                preview=mode == "preview",
+                expected_count=expected_count,
             )
-            self.workspace.mark_modified(project_id)
-            return {
-                "owner": owner,
-                "kind": kind,
-                "count": len(results),
-                "updated": [edit_view(item) for item in results],
-            }
+            if mode == "apply":
+                self.workspace.mark_modified(project_id)
+            return batch_update_view(kind, owner, mode, batch, offset, limit)
+
+    def pko_create_many(
+        self,
+        project_id: str,
+        source_structure: str,
+        target_structure: str,
+        kind: str | None = None,
+        pairs: list[dict[str, Any]] | None = None,
+        fields: Mapping[str, Any] | None = None,
+        group: str = "",
+        mode: str = "preview",
+        expected_preview_hash: str | None = None,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """ПКО и ПКС по многим парам. Проект меняется только после apply с хешем предпросмотра."""
+        with (
+            self._lock,
+            self._structure(source_structure) as source,
+            self._structure(target_structure) as target,
+        ):
+            rules = self._exchange(project_id)
+            batch = create_pko_many(
+                rules,
+                source_structure,
+                target_structure,
+                source,
+                target,
+                kind=kind,
+                pairs=pairs,
+                fields=fields,
+                group=group,
+                mode=mode,
+                expected_preview_hash=expected_preview_hash,
+            )
+            if mode == "apply":
+                self.workspace.mark_modified(project_id)
+            return pko_batch_view(batch, offset, limit)
 
     def rule_delete(
         self,

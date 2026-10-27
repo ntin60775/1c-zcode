@@ -8,7 +8,7 @@ import pytest
 import yaml
 from mcp import Client
 
-from kd_rules_mcp.projects import LocalSettings, load_catalog, load_local
+from kd_rules_mcp.projects import LocalSettings, load_catalog, load_local, without_login
 from kd_rules_mcp.server import create_server
 from kd_rules_mcp.service import Kd2Service, PathMap, Settings
 
@@ -89,6 +89,7 @@ async def test_project_list_reports_agent_paths_and_server_names(tmp_path: Path)
     async with Client(create_server(Kd2Service(settings))) as client:
         listed = (await client.call_tool("project_list", {})).structured_content
     assert listed is not None
+    assert listed["exchanges"] == [{"plan": "ОбменАльфаБета", "projects": ["alpha", "beta"]}]
     assert listed["workspace"] == HOST_WORKSPACE
     assert listed["shared_mcp"] == ["docs"]
     by_id = {item["project"]: item for item in listed["projects"]}
@@ -195,6 +196,25 @@ async def test_project_list_login_flag_hides_credentials(tmp_path: Path) -> None
     assert SECRET not in text
 
 
+def test_project_list_profile_keeps_legacy_exchange_view(tmp_path: Path) -> None:
+    settings, _ = _prepare(tmp_path)
+    data = yaml.safe_load(settings.projects_file.read_text(encoding="utf-8"))
+    data["exchanges"][0].update(
+        {
+            "id": "alpha-beta",
+            "technology": "kd2",
+            "sides": [
+                {"project": "alpha", "base": "sandbox", "rules": "rules"},
+                {"project": "beta"},
+            ],
+        }
+    )
+    settings.projects_file.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert Kd2Service(settings).project_list()["exchanges"] == [
+        {"plan": "ОбменАльфаБета", "projects": ["alpha", "beta"]}
+    ]
+
+
 @pytest.mark.anyio
 async def test_project_list_login_flag_without_local_file_uses_dev_env(tmp_path: Path) -> None:
     """Нет `projects.local.yaml` — признак только по `.dev.env`, `logins` не видны."""
@@ -209,3 +229,38 @@ async def test_project_list_login_flag_without_local_file_uses_dev_env(tmp_path:
     text = json.dumps(listed, ensure_ascii=False)
     assert USER_ENV not in text
     assert SECRET not in text
+
+
+@pytest.mark.parametrize(
+    ("connection", "expected"),
+    [
+        ('Srvr="host";Ref="base";', 'Srvr="host";Ref="base";'),
+        ('File="D:/Базы/A";Usr="u";Pwd="p";', 'File="D:/Базы/A";'),
+        ('Srvr="host"; ref="base" ; USR = "u";pwd="a;b";', 'Srvr="host";ref="base";'),
+        ('File="D:/a;b";Pwd="x""y";', 'File="D:/a;b";'),
+        ('Srvr="host";Ref="base"', 'Srvr="host";Ref="base";'),
+    ],
+)
+def test_without_login_drops_user_and_password(connection: str, expected: str) -> None:
+    assert without_login(connection) == expected
+
+
+@pytest.mark.anyio
+async def test_project_list_connection_without_login(tmp_path: Path) -> None:
+    """Строка соединения для Конфигуратора: из каталога, без `Usr`/`Pwd` и логина из файлов."""
+    settings = _login_settings(tmp_path, with_local=True)
+    catalog = settings.projects_file
+    assert catalog is not None
+    text = catalog.read_text(encoding="utf-8").replace(
+        "connection: 'File=\"C:\\\\C\";'",
+        'connection: \'Srvr="host";Ref="C";Usr="admin";Pwd="' + SECRET + "\";'",
+    )
+    catalog.write_text(text, encoding="utf-8")
+    async with Client(create_server(Kd2Service(settings))) as client:
+        listed = (await client.call_tool("project_list", {})).structured_content
+    assert listed is not None
+    bases = {item["project"]: item for item in listed["projects"]}["alpha"]["bases"]
+    assert bases["plain"]["connection"] == 'Srvr="host";Ref="C";'
+    assert bases["with_login"]["connection"].startswith('File="C:')
+    dumped = json.dumps(listed, ensure_ascii=False)
+    assert SECRET not in dumped and "admin" not in dumped and USER_LOGIN not in dumped
