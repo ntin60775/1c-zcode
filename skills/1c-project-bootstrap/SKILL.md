@@ -76,9 +76,10 @@ when_to_use: "Проект 1С подключается к контуру (вп�
 
 `.zcode/1c/registry.local.json` — реестр состояния контура в проекте на
 ЭТОЙ машине и процесса деплоя. Каркас — копия
-`.zcode/1c/templates/registry.template.json`, схема (правила и смысл
-полей — в description) — `.zcode/1c/templates/registry.schema.json`,
-контракт `contour-consumers/1`. Оба вендорятся контуром; сам файл в git
+`.zcode/skills/1c-project-layout/templates/registry.template.json`, схема
+(правила и смысл полей — в description) —
+`.zcode/skills/1c-project-layout/templates/registry.schema.json`, контракт
+`contour-consumers/1`. Оба вендорятся навыком топологии; сам файл в git
 не попадает (строка в `.gitignore`).
 
 Правила работы:

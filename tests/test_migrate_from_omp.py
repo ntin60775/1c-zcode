@@ -201,6 +201,23 @@ def main() -> int:
 	check("apply: va-подблок снят", "vanessa" not in v8 and "\nva:" not in v8, v8[:300])
 	check("apply: имя проекта живо", "name: fakeproj" in v8, v8[:200])
 
+	# ── local с одним infobase.user: привязка из main переезжает и сливается ──
+	p2 = tmp / "proj-local-user"
+	make_project(p2)
+	(p2 / "v8project.local.yaml").write_text(
+		"infobase:\n  user: ТестовыйПользователь\n", encoding="utf-8")
+	r = run_migrate(p2, tmp, "--apply")
+	check("local user: apply exit 0", r.returncode == 0, r.stdout[-400:])
+	v8_2 = (p2 / "v8project.yaml").read_text(encoding="utf-8")
+	local_2 = (p2 / "v8project.local.yaml").read_text(encoding="utf-8")
+	check("local user: connection переехал в infobases.origin",
+	      "infobases:\n  origin:" in local_2 and "File=/tmp/fake1c" in local_2, local_2[:400])
+	check("local user: user сохранён под origin",
+	      "user: ТестовыйПользователь" in local_2, local_2[:400])
+	check("local user: infobase в main убран", "infobase" not in v8_2, v8_2[:300])
+	check("local user: ровно один origin, без дублей",
+	      local_2.count("origin:") == 1, local_2[:400])
+
 	gitignore = (p / ".gitignore").read_text(encoding="utf-8")
 	check("apply: omp-блок .gitignore убран",
 	      ".omp" not in gitignore and "node_modules/" in gitignore, gitignore)

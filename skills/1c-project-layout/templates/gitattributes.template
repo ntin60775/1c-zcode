@@ -19,10 +19,17 @@
 Form.bin binary
 *.bin binary
 
+# Растровые ресурсы выгрузки: все форматы, иначе unica.check ругается
+# git.binary_policy_missing (встречался .bmp в формах)
 *.png binary
 *.ico binary
 *.jpg binary
 *.jpeg binary
+*.bmp binary
+*.gif binary
+*.tif binary
+*.tiff binary
+*.webp binary
 
 # Архивы
 *.7z binary

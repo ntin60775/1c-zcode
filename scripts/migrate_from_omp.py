@@ -403,33 +403,67 @@ def main() -> int:
 		v8_lines, renamed = rename_provider_keys(v8_lines)
 		changed.extend(f"providers.{entry}" for entry in renamed)
 
-		# Привязка ИБ — в local-слой: infobases.origin. Если local уже
-		# объявляет базу, main-блок не трогаем: слияние YAML вручную.
+		# Привязка ИБ — в local-слой: infobases.origin. Привязкой считается
+		# connection (или готовый infobases:); local-блок с одним user — это
+		# креды, их надо слить с привязкой из main, а не считать её готовой.
+		def read_block(lines, key):
+			start = next((i for i, ln in enumerate(lines)
+			              if re.match(rf"^{key}\s*:", ln)), None)
+			if start is None:
+				return None, []
+			block, i = [], start + 1
+			while i < len(lines) and (lines[i][:1] in (" ", "\t") or not lines[i].strip()):
+				block.append(lines[i]); i += 1
+			while block and not block[-1].strip():
+				block.pop()
+			return start, block
+
+		def remove_block(lines, key):
+			start, block = read_block(lines, key)
+			if start is None:
+				return lines
+			return lines[:start] + lines[start + 1 + len(block):]
+
+		def merge_fields(primary, secondary):
+			"""primary + secondary; ключи secondary перекрывают (машинная правда)."""
+			def key_of(line):
+				match = re.match(r"^\s*([A-Za-z0-9_.-]+)\s*:", line)
+				return match.group(1) if match else None
+			over = {key_of(ln) for ln in secondary if key_of(ln)}
+			return [ln for ln in primary if key_of(ln) not in over] + secondary
+
 		main_keys = [re.match(r"^(infobase|infobases)\s*:", ln).group(1)
 		             for ln in v8_lines if re.match(r"^(infobase|infobases)\s*:", ln)]
-		local_has = any(re.match(r"^(infobase|infobases)\s*:", ln) for ln in local_lines)
+		_, local_block = read_block(local_lines, "infobase")
+		local_has = any(re.match(r"^infobases\s*:", ln) for ln in local_lines) or any(
+			re.match(r"^\s+(connection|origin)\s*:", ln) for ln in local_block)
 		if len(main_keys) > 1:
 			note("v8project.yaml: infobase и infobases в одном файле — разбери вручную")
 		elif main_keys and local_has:
 			note("v8project.yaml: привязка ИБ уже есть в local-слое — main-блок не тронут")
+		elif main_keys and main_keys[0] == "infobase":
+			_, block = read_block(v8_lines, "infobase")
+			if any(re.match(r"^\s+origin\s*:", ln) for ln in block):
+				block = [ln for ln in block if not re.match(r"^\s+origin\s*:", ln)]
+			fields = merge_fields(block, local_block)
+			merged = ["infobases:", "  origin:"]
+			merged += ["  " + ln if ln.strip() else ln for ln in fields]
+			v8_lines = remove_block(v8_lines, "infobase")
+			local_lines = remove_block(local_lines, "infobase")
+			if not local_lines:
+				local_lines = ["# Локальный оверлей машины: в git не попадает."]
+			local_lines += ["", "# Перенесено из v8project.yaml (0.15: привязка машины)."] + merged
+			changed.append("привязка ИБ перенесена в v8project.local.yaml (0.15)")
+		elif main_keys and local_block:
+			note("v8project.yaml: infobases в main и user в local — сведи в local вручную")
 		elif main_keys:
 			key = main_keys[0]
-			out, i, block = [], 0, []
-			while i < len(v8_lines):
-				line = v8_lines[i]
-				if re.match(rf"^{key}\s*:", line):
-					i += 1
-					while i < len(v8_lines) and v8_lines[i][:1] in (" ", "\t"):
-						block.append(v8_lines[i]); i += 1
-					continue
-				out.append(line); i += 1
-			if key == "infobase":
-				block = ["  origin:"] + ["  " + ln for ln in block]
-			moved = ["infobases:"] + block if key == "infobase" else [f"{key}:"] + block
+			_, block = read_block(v8_lines, key)
+			moved = [f"{key}:"] + block
 			if not local_lines:
 				local_lines = ["# Локальный оверлей машины: в git не попадает."]
 			local_lines += ["", "# Перенесено из v8project.yaml (0.15: привязка машины)."] + moved
-			v8_lines = out
+			v8_lines = remove_block(v8_lines, key)
 			changed.append("привязка ИБ перенесена в v8project.local.yaml (0.15)")
 
 		if apply and changed:
