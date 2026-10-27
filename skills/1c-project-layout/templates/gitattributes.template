@@ -16,10 +16,12 @@
 
 *.sh text eol=lf
 *.groovy text eol=lf
+# Двоичные .bin — поимённо, классом нельзя: XDTO Package.bin текстовый
+# (unica.check: git.text_resource_marked_binary), а Template.bin — бинарный
+# макет (git.binary_policy_missing без правила)
 Form.bin binary
+Template.bin binary
 ParentConfigurations.bin binary
-# *.bin классом НЕ помечать: XDTO Package.bin — текстовый ресурс, unica.check
-# даёт git.text_resource_marked_binary (замечено на демо, 27.10)
 
 # Растровые ресурсы выгрузки: все форматы, иначе unica.check ругается
 # git.binary_policy_missing (встречался .bmp в формах)
