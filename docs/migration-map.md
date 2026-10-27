@@ -24,7 +24,27 @@
 | поставка | каталог + deploy-runner | `deploy.json` (контракт v1 sot-zcode-marketplace), вендоринг в `<repo>/.zcode/`; self-`marketplace.json` удалён |
 | миграция со старого контура | скрипт + команда | `scripts/migrate_from_omp.py`, `/1c-migrate-from-omp`, `docs/MIGRATION-FROM-OMP.md` |
 
-## Переход на поверхность Unica 0.13 (v0.2.1)
+## Переход на поверхность Unica 0.15 (v0.4.63, 2026-10-26)
+
+Канал next, `unica@unica-next 0.15.0-rc.1` (пин `v0.15.0-rc.1`,
+`v8-runner 0.15.3`). Имена 11 инструментов не изменились; сдвинулись
+семантика ответов и контракт проекта.
+
+| Было (0.13/0.14) | Стало (0.15) |
+|---|---|
+| `unica_ping` handshake `2024-11-05`, кэш по `mtime` | протокол `2025-11-25`; установка и рантаймы — из `installed_plugins.json` |
+| `doc_gate` засчитывал любой непустой ответ | отказ `unsupported_source`, `status: working` и нулевой поиск не сверка; ответ задачи закрывает флаг через `task.result`; успешная сверка липкая |
+| `UNICA_MIN = 0.13.0` | `UNICA_MIN = 0.15.0-rc.1` |
+| `infobases` в `v8project.yaml` | `infobases.origin` в `v8project.local.yaml`; только `origin` |
+| `builder`/`execution_timeout`/`partialLoadThreshold` сняты | ещё `basePath` и верхнеуровневый `connection`; `build` → `push`, прежние имена providers |
+| `upload`/`apply`/`reset` в списке операций | недоступны (#1246), загрузка `.cf`/`.cfe` — ibcmd |
+| нет требования к страницам | `cursor` до пустого; `search` с `data.totals`; `resolve {paths}`; `<узел>.Props.<имя>`; `check {}` группами |
+| источник `configuration-documentation` | `unsupported_source` (#939); работают `platform-help` и `development-standard` |
+
+Полный справочник полей `v8project` и регламент переезда —
+`skills/1c-project-layout/references/v8project.md`.
+
+## Переход на поверхность Unica 0.13 (v0.2.1) — история
 
 Разведка по докам/спекам 0.13.0-rc.3 (v8-runner 0.5.1 → 0.11.2, смена репо
 раннера) показала: MCP-поверхность сжата до глаголов
@@ -78,6 +98,6 @@
 - **Замки и состояние — вне процесса**: всё состояние по `session_id` в
   `~/.zcode/state/1c/…`; гейты не имеют памяти между запусками.
 - **Тесты на python3**: гейт — python-скрипт, тестируем тем же рантаймом.
-- **Мягкая зависимость от юники**: `UNICA_MIN=0.13.0` в `scripts/doctor.py`
-  + `docs/UNICA.md`; формальная dependency не используется (нет ranges,
-  переключение каналов ручное).
+- **Мягкая зависимость от юники**: `UNICA_MIN=0.15.0-rc.1` в
+  `scripts/doctor.py` + `docs/UNICA.md`; формальная dependency не
+  используется (нет ranges, переключение каналов ручное).

@@ -38,7 +38,7 @@ def main() -> int:
 		status, _ = ib_lock.acquire_base_lock("/tree/b", "File=build/ib", "build", "s2")
 		check("файловая база другого дерева — свой ключ", status == "ok", status)
 
-		# ── connection из v8project: обе формы (0.12/0.13) ──
+		# ── connection из v8project: legacy и 0.15 ──
 		proj = Path(tmp) / "proj"
 		proj.mkdir()
 		(proj / "v8project.yaml").write_text(
@@ -51,7 +51,7 @@ def main() -> int:
 		(proj / "v8project.local.yaml").write_text(
 			'infobases:\n  origin:\n    connection: Srvr="base";Ref="wt13";\n',
 			encoding="utf-8")
-		check("форма 0.13 infobases.origin.connection читается",
+		check("форма 0.15 infobases.origin.connection читается",
 		      ib_lock.resolve_infobase_connection(str(proj)) == 'Srvr="base";Ref="wt13";',
 		      str(ib_lock.resolve_infobase_connection(str(proj))))
 

@@ -139,13 +139,66 @@ def main() -> int:
 		check("FAIL топологии исчез", "обязательная топология неполна" not in r.stdout,
 		      r.stdout[:600])
 
+		# ── 3c. v8project 0.15: отказы схемы и local-слой ──
+		def v8_case(name: str, text: str, needle: str, local: str = ""):
+			(root / "v8project.yaml").write_text(text, encoding="utf-8")
+			(root / "v8project.local.yaml").write_text(local, encoding="utf-8")
+			result = run_doctor(root)
+			check(name, needle in result.stdout, result.stdout[:900])
+
+		BASE = "workPath: build\nformat: DESIGNER\nsource-set:\n  - name: main\n    type: CONFIGURATION\n    path: src/cf\n"
+		v8_case("v8 0.15: builder отклонён", BASE + "builder: designer\n",
+		        "ключ builder отвергается схемой 0.15")
+		v8_case("v8 0.15: basePath отклонён", BASE + "basePath: src\n",
+		        "basePath не входит в контракт")
+		v8_case("v8 0.15: execution_timeout отклонён", BASE + "execution_timeout: 300\n",
+		        "общего execution_timeout в 0.15 нет")
+		v8_case("v8 0.15: partialLoadThreshold отклонён",
+		        BASE + "push:\n  partialLoadThreshold: 0.5\n",
+		        "partialLoadThreshold отвергается")
+		v8_case("v8 0.15: верхнеуровневый connection отклонён",
+		        BASE + "connection: 'File=build/ib'\n",
+		        "верхнеуровневый connection не использовать")
+		v8_case("v8 0.15: несколько именованных баз отклонены",
+		        BASE + "infobases:\n  origin:\n    connection: 'File=build/ib'\n"
+		               "  second:\n    connection: 'File=build/ib2'\n",
+		        "именованные базы second")
+		v8_case("v8 0.15: смесь infobase и infobases отклонена",
+		        BASE + "infobase:\n  connection: 'File=build/ib'\n"
+		               "infobases:\n  origin:\n    connection: 'File=build/ib'\n",
+		        "infobase и infobases в одном файле")
+		v8_case("v8 0.15: infobases в main — WARN про local",
+		        BASE + "infobases:\n  origin:\n    connection: 'File=build/ib'\n",
+		        "канон — v8project.local.yaml")
+		v8_case("v8 0.15: local-слой — канон",
+		        BASE,
+		        "привязка базы в local-слое",
+		        local="infobases:\n  origin:\n    connection: 'File=build/ib'\n")
+		v8_case("v8 0.15: лишняя база в local отклонена",
+		        BASE,
+		        "именованные базы extra",
+		        local="infobases:\n  origin:\n    connection: 'File=build/ib'\n"
+		              "  extra:\n    connection: 'File=build/ib2'\n")
+		# ── 3d. platform path: inline-комментарий шаблона не уезжает в путь ──
+		(root / "v8project.yaml").write_text(BASE, encoding="utf-8")
+		(root / "v8project.local.yaml").write_text(
+			"tools:\n  platform:\n    version: '8.3.99.9999'\n"
+			"    path: '/opt/1cv8/x86_64/8.3.99.9999'   # каталог установки, БЕЗ strict-пина\n",
+			encoding="utf-8")
+		r = run_doctor(root)
+		check("platform: путь без inline-комментария",
+		      "не найдена: /opt/1cv8/x86_64/8.3.99.9999;" in r.stdout
+		      and "каталог установки" not in r.stdout,
+		      r.stdout[:900])
+		(root / "v8project.local.yaml").write_text("", encoding="utf-8")
+
 		# ── 1b. артефакты рантайма: манифест ↔ кэш (fake HOME) ──
 		import json as _json
 		SHA86 = "e" * 64
 
 		def make_home(state: str) -> Path:
 			home = root / f"fakehome-{state}"
-			ver = "0.13.0-rc.7"
+			ver = "0.15.0-rc.1"
 			install = home / ".zcode/cli/plugins/cache/unica-next/unica" / ver
 			install.mkdir(parents=True)
 			(install / "runtime-manifest.json").write_text(_json.dumps({

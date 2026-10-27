@@ -8,10 +8,12 @@ when_to_use: "Нужна HTTP-публикация базы (API-тесты, ODa
 
 ## Границы с unica
 
-`unica.run` (адаптер v8-runner) покрывает push/pull/apply/make/upload/download,
-dt-дамп и запуск клиентов — **публикации в его поверхности нет** (документный
-gap 0.13; ibcmd публиковать тоже не умеет — только `server config init` для
-скелета конфига). Поэтому: правки и сборка — unica, публикация — этот скилл.
+`unica.run` (адаптер v8-runner 0.15) покрывает push/pull/make/download,
+`infobase.*`, `extensions.*` и запуск клиентов; `upload`/`apply`/`reset` в
+0.15 недоступны (#1246). **Публикации в его поверхности нет** (документный
+gap 0.15; `panels.set`/`homePage.set` — интерфейс, не публикация; ibcmd
+публиковать тоже не умеет — только `server config init` для скелета
+конфига). Поэтому: правки и сборка — unica, публикация — этот скилл.
 Штатный путь контура — `publish_ib.sh start|stop|status [путь-к-базе]`:
 он сам генерирует конфиг публикации из `contour.json` и сам закрывает грабли
 из этого скилла. Руками `build/.ibsrv/ibases.json` не править — `start`

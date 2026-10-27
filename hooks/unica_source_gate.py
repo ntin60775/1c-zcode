@@ -2,7 +2,7 @@
 """unica_source_gate.py — гейт прямой правки исходников 1С (ZCode-порт unica-gate.ts).
 
 Полноправный порт дона (1c-omp/extensions/unica-gate.ts) на поверхность
-Unica 0.13 (run/apply/docs; 0.12-имена runtime_execute/code_patch retir'нуты):
+Unica 0.15 (run/apply/docs; 0.12-имена runtime_execute/code_patch retir'нуты):
 
 1. PreToolUse Write/Edit/ApplyPatch/Bash — правка исходников
    src/{cf,cfe,epf,erf} и tests/{cfe,epf} мимо Unica MCP блокируется.
@@ -15,8 +15,8 @@ Unica 0.13 (run/apply/docs; 0.12-имена runtime_execute/code_patch retir'н�
 4. Правка самого allowlist'а эскалаций журналируется (бумажный след обхода).
 
 Инварианты пересборки — ДАННЫЕ, не код: contour.json → unica.rebuild_rules
-(дефолт пуст — нейтрален). Причины: semantics 0.13 (push {force, full},
-upload без apply) отличается от 0.12 (fullRebuild), и блокировать по
+(дефолт пуст — нейтрален). Причины: семантика push в 0.15 задана словарём
+unica.run {} (full/force), а не прежним fullRebuild, и блокировать по
 устаревшему правилу хуже, чем не блокировать. Проект включает правила
 сверкой на живом стенде. Схема правила:
   {"tool": "run", "op": "push", "source_sets": "extensions",
@@ -65,10 +65,10 @@ SED_INPLACE_RE = re.compile(r"sed\s+(-[a-zA-Z]*i[a-zA-Z]*|--in-place)")
 REDIRECT_RE = re.compile(r">>?\s*([^\s;|&]+)")
 
 
-# ── маршрутизация правки (подсказки в глаголах 0.13) ────────────────────────
+# ── маршрутизация правки (подсказки в глаголах 0.15) ────────────────────────
 
 def suggest_unica_tool(rel: str) -> str:
-	"""Подсказка: как выразить правку файла через поверхность 0.13."""
+	"""Подсказка: как выразить правку файла через поверхность 0.15."""
 	lower = rel.lower()
 	if lower.endswith(".bsl"):
 		return "unica.apply (ops code.insert / code.replace)"
@@ -86,11 +86,13 @@ def block_message(rel: str, suggestion: str) -> str:
 		f"Файл: {rel}",
 		f"Как выразить: {suggestion}",
 		"",
-		"Поверхность Unica 0.13 (глаголы, не инструменты-на-файл):",
-		"  unica.view / unica.search  — чтение/поиск (без ограничений)",
-		"  unica.apply                — правка кода и структуры (ops)",
-		"  unica.run {op: push, …}    — сборка/загрузка; unica.check — валидация",
-		"  словарь unica.run {} (вызов без op) — источник контракта",
+		"Поверхность Unica 0.15 (глаголы, не инструменты-на-файл):",
+		"  unica.view / unica.search  — чтение/поиск (страницы по cursor)",
+		"  unica.resolve {paths}      — пути/строки → логические адреса",
+		"  unica.apply                — правка кода и структуры (ops из view.can)",
+		"  unica.run {op, args, dryRun} — сборка/загрузка; unica.check — валидация",
+		"  словарь unica.run {} — источник контракта; длинное свойство —",
+		"  <узел>.Props.<имя>",
 		"",
 		"Разовая прямая правка (когда unica.* не выражает изменение) —",
 		"впиши путь в .zcode/unica-gate-escalations.txt и повтори.",
@@ -193,7 +195,7 @@ def unica_call(tool_name: str, tool_input: dict, cwd: str):
 
 
 def runner_op(args: dict) -> str:
-	"""Операция раннера из аргументов: 0.13 `op`, переходно `operation`."""
+	"""Операция раннера из аргументов: 0.15 `op`, переходно `operation`."""
 	return str(args.get("op") or args.get("operation") or "")
 
 

@@ -48,7 +48,7 @@ for _rel in ("../../hooks", "../hooks"):
 
 from contour_common import contour_config
 
-UNICA_MIN = "0.13.0"
+UNICA_MIN = "0.15.0-rc.1"
 CONTOUR_SKILLS = {"1c-contour", "1c-test-contour", "1c-testpilot", "1c-db-data",
                   "1c-project-bootstrap", "1c-project-layout", "1c-ibsrv-publish", "bsp",
                   "1c-kd-rules", "kd2-rules-build", "kd2-exchange-pitfalls", "kd3-rules"}
@@ -106,7 +106,7 @@ def main() -> int:
 	except (OSError, json.JSONDecodeError, AttributeError):
 		warn("реестр установленных плагинов не читается — проверь unica руками")
 	if not unica_entries:
-		fail("unica не установлена (нужна unica@unica-next или unica@unica, "
+		fail("unica не установлена (нужна unica@unica-next, "
 		     f"версия >= {UNICA_MIN})")
 	elif len(unica_entries) > 1:
 		fail("unica установлена в нескольких каналах одновременно "
@@ -323,38 +323,103 @@ def main() -> int:
 			v8text = (root / "v8project.yaml").read_text(encoding="utf-8")
 		except OSError:
 			v8text = ""
-		if re.search(r"(?m)^builder\s*:", v8text):
-			fail("v8project.yaml: ключ builder отвергается схемой 0.13 — убери его, "
-			     "исполнителя задавай per-operation providers (файловая — ibcmd, "
-			     "серверная — designer); пока он там, unica.run не примет конфиг")
-	if re.search(r"(?m)^infobases\s*:", v8text):
-		ok("связь базы в форме 0.13 (infobases.origin)")
-	elif re.search(r"(?m)^infobase\s*:", v8text):
-		warn("v8project.yaml в форме 0.12 (infobase.connection) — 0.13 читает "
-		     "legacy на миграции, но лучше перейти на infobases.origin.connection")
+	local_file = root / "v8project.local.yaml"
+	local_text = ""
+	if local_file.is_file():
+		try:
+			local_text = local_file.read_text(encoding="utf-8")
+		except OSError:
+			local_text = ""
+
+	def section_keys(text: str, section: str) -> list:
+		"""Ключи верхнего уровня внутри секции (line-парсер, без PyYAML)."""
+		keys, inside = [], False
+		for line in text.splitlines():
+			if re.match(rf"^{re.escape(section)}\s*:", line):
+				inside = True
+				continue
+			if inside:
+				if line[:1] not in (" ", "\t"):
+					break
+				match = re.match(r"^  ([A-Za-z0-9_.-]+)\s*:", line)
+				if match:
+					keys.append(match.group(1))
+		return keys
+
+	def infobase_names(text: str) -> list:
+		return section_keys(text, "infobases")
+
+	def platform_path(text: str) -> str:
+		"""Путь tools.platform.path: кавычки и inline-комментарий снимаются,
+		иначе хвост комментария из шаблона уезжает в путь."""
+		if not text:
+			return ""
+		match = re.search(
+			r"(?m)^[ \t]+path[ \t]*:[ \t]*"
+			r"(?:(['\"])(/opt/1cv8/[^'\"\n]+)\1|(/opt/1cv8/[^\s#]+))",
+			text)
+		return (match.group(2) or match.group(3)) if match else ""
+
+	for name, text in (("v8project.yaml", v8text),
+	                   ("v8project.local.yaml", local_text)):
+		if not text:
+			continue
+		for key, reason in (
+			("builder", "ключ builder отвергается схемой 0.15 — исполнителя "
+			            "задавай per-operation providers"),
+			("basePath", "ключ basePath не входит в контракт v8-runner 0.15"),
+			("execution_timeout", "общего execution_timeout в 0.15 нет — "
+			                      "лимиты живут в tools/tests"),
+		):
+			if re.search(rf"(?m)^{key}\s*:", text):
+				fail(f"{name}: {reason}")
+		if re.search(r"(?m)^\s*partialLoadThreshold\s*:", text):
+			fail(f"{name}: ключ partialLoadThreshold отвергается v8-runner 0.15 — "
+			     "удали строку, полная загрузка запрашивается push full:true")
+		if re.search(r"(?m)^connection\s*:", text):
+			fail(f"{name}: верхнеуровневый connection не использовать — связь "
+			     "базы живёт в infobases.origin.connection")
+		has_infobase = bool(re.search(r"(?m)^infobase\s*:", text))
+		has_infobases = bool(re.search(r"(?m)^infobases\s*:", text))
+		if has_infobase and has_infobases:
+			fail(f"{name}: infobase и infobases в одном файле — 0.15 отвергает смесь")
+		names = infobase_names(text)
+		extra = [n for n in names if n != "origin"]
+		if extra:
+			fail(f"{name}: именованные базы {', '.join(extra)} — адаптер Unica 0.15 "
+			     "поддерживает только origin; лишние убери")
+		if has_infobase:
+			warn(f"{name}: infobase — одноцикловый синоним infobases.origin; "
+			     "канон 0.15 — infobases.origin.connection в v8project.local.yaml")
+		if name == "v8project.yaml" and has_infobases:
+			warn("v8project.yaml: infobases читается 0.15, но канон — "
+			     "v8project.local.yaml (машинная привязка, не общая для проекта)")
+		if name == "v8project.yaml" and re.search(r"(?m)^build\s*:", text):
+			warn("v8project.yaml: build — прежнее имя push, принимается один цикл; "
+			     "перенеси настройки в push")
+		legacy_providers = {"build", "dump", "init", "load", "infobase.configuration.export"}
+		found_legacy = sorted(set(section_keys(text, "providers")) & legacy_providers)
+		if found_legacy:
+			warn(f"{name}: providers.{', providers.'.join(found_legacy)} — прежние "
+			     "имена операций, принимаются один цикл; перейди на push/pull/"
+			     "infobase.create/upload/download")
+	if v8text:
+		if re.search(r"(?m)^infobases\s*:", v8text):
+			ok("связь базы объявлена (0.15 читает и из основного файла)")
+		elif re.search(r"(?m)^infobase\s*:", v8text):
+			warn("v8project.yaml: infobase — legacy-форма; 0.15 читает её, "
+			     "но канон — infobases.origin.connection в local-слое")
+	if local_text and re.search(r"(?m)^infobases\s*:", local_text):
+		ok("привязка базы в local-слое (канон 0.15)")
 	# платформа: заявленная — из local-оверлея (машинное решение) или
 	# v8project.yaml; не существует — скан /opt/1cv8/x86_64/*/: одна версия —
 	# готовая строка оверлея, несколько — вопрос пользователю, ноль — FAIL
-	local_platform = ""
-	local_file = root / "v8project.local.yaml"
-	if local_file.is_file():
-		try:
-			local_platform = next(
-				(line.split("path:", 1)[1].strip().strip("'\"")
-				 for line in local_file.read_text(encoding="utf-8").splitlines()
-				 if line[:1] in (" ", "\t") and line.strip().startswith("path:")
-				 and "/opt/1cv8/" in line),
-				"")
-		except OSError:
-			pass
-	declared = local_platform or next(
-		(match.group(1) for match in
-		 (re.search(r"(?m)^\s*path\s*:\s*['\"]?(/opt/1cv8/\S+?)['\"]?\s*$", v8text),)
-		 if match), None) \
+	local_platform = platform_path(local_text)
+	declared = local_platform or platform_path(v8text) \
 		or str((contour.get("1c", {}).get("platform") or {}).get("path") or "")
 	if declared and Path(declared).exists():
 		source = ("локальный оверлей" if local_platform
-		          else "v8project.yaml" if re.search(r"(?m)^\s*path\s*:", v8text)
+		          else "v8project.yaml" if platform_path(v8text)
 		          else "contour.json")
 		ok(f"платформа на месте ({source}): {declared}")
 	elif declared:

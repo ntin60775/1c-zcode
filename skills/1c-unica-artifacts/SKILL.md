@@ -12,7 +12,13 @@ when_to_use: "bsl_diagnostics/bsl_index не оживает или провай�
 установки на той же машине. Разовый чек рассинхрона — `/1c-doctor`
 (сверка манифеста с кэшем артефактов).
 
-## Как Unica резолвит артефакты (0.13)
+Контракт 0.15 (тег `v0.15.0-rc.1`, манифест schema 2): `unica 0.15.0-rc.1`,
+`v8-runner 0.15.3`, `bsl-analyzer 0.2.86`, `rlm-tools-bsl 1.42.0`. После
+переключения канала на машине остаются два кэша и два `data/<id>`; доктор и
+ping выбирают установку из `installed_plugins.json`, старую — снести после
+зелёной проверки.
+
+## Как Unica резолвит артефакты (0.15)
 
 - Контракт — `runtime-manifest.json` в каталоге установленной версии
   плагина (`~/.zcode/cli/plugins/cache/<канал>/<плагин>/<версия>/`):
@@ -55,7 +61,7 @@ when_to_use: "bsl_diagnostics/bsl_index не оживает или провай�
 ## Лечение: докачка или перенос из соседнего кэша
 
 Артефакт требуемой версии часто уже на машине — в plugin-data соседней
-установки юники (`unica@unica-next`, второй канал) или в codex-складе
+установки юники (другой канал или прежняя версия) или в codex-складе
 `~/.codex/unica/runtimes`, если машина им пользовалась. Перенос легален
 после сверки с манифестом. **Главное: `asset.sha256` манифеста — хеш
 исходного артефакта с github (tar.gz или бинарь), НЕ распакованного
@@ -74,7 +80,7 @@ sha256sum "$SRC/linux-x64/bsl-analyzer"
 #  unpack-артефакт (v8-runner, rlm-tools-bsl): sha манифеста — хеш tar.gz,
 #  бинарь сверять бессмысленно; сверить .ready.json:
 cat "$SRC/linux-x64/.ready.json"
-DST="$HOME/.zcode/cli/plugins/data/unica@unica/runtimes/bsl-analyzer"
+DST="$HOME/.zcode/cli/plugins/data/unica@unica-next/runtimes/bsl-analyzer"
 #  id установки у каждого канала свой: unica@unica (main), unica@unica-next (rc) —
 #  смотреть data/ на машине
 cp -r "$SRC" "$DST/"

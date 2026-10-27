@@ -5,7 +5,7 @@
 перенаправляется во временный каталог через ZCODE_1C_STATE_DIR. Платформа
 и база 1С не нужны: покрываются маршрутизация правки, эскалации, bash,
 ворктри, замок на инфобазу и правила пересборки из contour.json
-(по умолчанию нейтральны — semantics 0.13, до сверки на стенде).
+(по умолчанию нейтральны — semantics 0.15, до сверки на стенде).
 
 Запуск: python3 tests/test_unica_source_gate.py
 """
@@ -18,10 +18,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _lib import audit_entries, check, run_hook, summary  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks"))
+from contour_common import UNICA_TOOLS_DEFAULT  # noqa: E402
+
 V8PROJECT = """\
 workPath: src
-infobase:
-  connection: Srvr="host";Ref="erp";
+infobases:
+  origin:
+    connection: Srvr="host";Ref="erp";
 source-set:
   - name: main
     type: CONFIGURATION
@@ -58,6 +62,12 @@ def make_tree(tmp: Path) -> Path:
 
 
 def main() -> int:
+	check("0.15: infobase.create в замке ИБ",
+	      "infobase.create" in UNICA_TOOLS_DEFAULT["ib_mutating_ops"],
+	      str(UNICA_TOOLS_DEFAULT["ib_mutating_ops"]))
+	check("0.15: extensions.set в замке ИБ",
+	      "extensions.set" in UNICA_TOOLS_DEFAULT["ib_mutating_ops"],
+	      str(UNICA_TOOLS_DEFAULT["ib_mutating_ops"]))
 	with tempfile.TemporaryDirectory() as tmp:
 		tmp_path = Path(tmp)
 		state = str(tmp_path / "state")
@@ -139,7 +149,7 @@ def main() -> int:
 		r = run_hook("unica_source_gate.py", {}, state, cwd)
 		check("пустой stdin проходит молча", r.returncode == 0, f"exit {r.returncode}")
 
-		# ── правила пересборки: по умолчанию гейт нейтрален (0.13) ──
+		# ── правила пересборки: по умолчанию гейт нейтрален (0.15) ──
 		r = run_push("Тесты", full=None)
 		check("без правил: push расширения без full проходит", r.returncode == 0, f"exit {r.returncode}")
 		r = run_push("main", full=True)
@@ -161,7 +171,7 @@ def main() -> int:
 		r = run_push("main", full=None)
 		check("правило: push main без full проходит", r.returncode == 0, f"exit {r.returncode}")
 
-		# ── контрактная форма 0.13: op наверху, параметры в args (#13) ──
+		# ── контрактная форма 0.15: op наверху, параметры в args (#13) ──
 		r = pre("mcp__unica__run", {"op": "push", "args": {
 			"force": True, "sourceSet": "main", "full": True, "cwd": cwd}})
 		check("контрактная форма: push main с full блокируется правилом с op",
@@ -264,7 +274,7 @@ def main() -> int:
 		      flat == {"op": "push", "full": True}, str(flat))
 		check("unica_args: wrapper-форма разворачивается",
 		      wrapped == {"op": "push", "full": True}, str(wrapped))
-		check("unica_args: контрактная 0.13 сохраняет верхний op",
+		check("unica_args: контрактная 0.15 сохраняет верхний op",
 		      contract == {"op": "push", "full": True}, str(contract))
 		check("unica_args: внутренний args приоритетен на конфликте",
 		      conflict == {"op": "push"}, str(conflict))

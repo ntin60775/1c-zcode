@@ -14,9 +14,10 @@
   3. AGENTS.md: вставить/заменить секцию контура между маркерами
      BEGIN/END 1C CONTOUR (шаблон .zcode/1c/templates/agents-section.md).
      KB-секцию (ontoship, .gitmark) НЕ трогаем.
-  4. v8project.yaml → форма 0.13: убрать отвергаемый ключ builder;
-     infobase.connection → infobases.origin.connection (если блок простой;
-     сложный остаётся — 0.13 читает legacy).
+  4. v8project.yaml → форма 0.15: убрать builder/basePath/execution_timeout/
+     partialLoadThreshold/верхнеуровневый connection; привязку ИБ перенести
+     в v8project.local.yaml как infobases.origin; build → push; прежние
+     имена providers переименовать.
   5. Правила проекта переезжают: .omp/rules/*.md → docs/omp-migrated/rules/
      (git mv; смысловое из RULES.md покрывает секция контура).
   5.5 Старый тест-стек (Vanessa/xUnit): фичи features/*.feature →
@@ -327,50 +328,119 @@ def main() -> int:
 			print("  ⚠ шаблон секции не вендорен — сначала deploy контура в проект")
 			FAILED.append("шаблон agents-section.md не найден")
 
-	# ── 4. v8project.yaml: переход на форму 0.13 ──
-	print("4. v8project.yaml → 0.13")
+	# ── 4. v8project.yaml: переход на форму 0.15 ──
+	print("4. v8project.yaml → 0.15")
 	v8 = root / "v8project.yaml"
+	local = root / "v8project.local.yaml"
 	if v8.is_file():
 		try:
 			v8_lines = v8.read_text(encoding="utf-8").splitlines()
 		except OSError:
 			v8_lines = []
+		try:
+			local_lines = local.read_text(encoding="utf-8").splitlines() if local.is_file() else []
+		except OSError:
+			local_lines = []
 		changed = []
-		# builder отвергается схемой 0.13 — убираем (per-operation providers)
-		kept = [ln for ln in v8_lines if not re.match(r"(?m)^builder\s*:", ln)]
-		if len(kept) != len(v8_lines):
-			changed.append("убран ключ builder (0.13: per-operation providers)")
-			v8_lines = kept
-		# infobase: (0.12) → infobases: origin: (0.13), если блок простой
-		# (только connection) — сложный блок оставляем: 0.13 читает legacy
-		if not any(re.match(r"(?m)^infobases\s*:", ln) for ln in v8_lines):
-			out, i, converted = [], 0, False
-			while i < len(v8_lines):
-				line = v8_lines[i]
-				if re.match(r"(?m)^infobase\s*:", line):
-					j, block = i + 1, []
-					while j < len(v8_lines) and (v8_lines[j][:1] in (" ", "\t")):
-						block.append(v8_lines[j]); j += 1
-					if block and all(ln.strip().startswith("connection:") for ln in block):
-						out.append("infobases:")
-						out.append("  origin:")
-						out.extend("    " + ln.strip() for ln in block)
-						converted = True
-					else:
-						out.append(line); out.extend(block)
-					i = j
+
+		def drop_top(lines, keys):
+			"""Убрать верхнеуровневые ключи (скаляр или блок) из строк."""
+			out, i, removed = [], 0, []
+			while i < len(lines):
+				line = lines[i]
+				match = re.match(r"^([A-Za-z0-9_.-]+)\s*:", line)
+				if match and match.group(1) in keys:
+					removed.append(match.group(1))
+					i += 1
+					while i < len(lines) and lines[i][:1] in (" ", "\t"):
+						i += 1
 					continue
 				out.append(line); i += 1
-			if converted:
-				v8_lines = out
-				changed.append("infobase.connection → infobases.origin.connection (0.13)")
+			return out, removed
+
+		def drop_any(lines, pattern):
+			"""Убрать строки по regex (например, partialLoadThreshold)."""
+			out = [ln for ln in lines if not re.search(pattern, ln)]
+			return out, len(out) != len(lines)
+
+		def rename_provider_keys(lines):
+			"""Прежние имена providers.* → имена 0.15 внутри секции providers."""
+			mapping = {"build": "push", "dump": "pull", "init": "infobase.create",
+			           "load": "upload", "infobase.configuration.export": "download"}
+			out, inside, renamed = [], False, []
+			for line in lines:
+				if re.match(r"^providers\s*:", line):
+					inside = True
+					out.append(line)
+					continue
+				if inside:
+					if line[:1] not in (" ", "\t"):
+						inside = False
+					else:
+						match = re.match(r"^(\s+)([A-Za-z0-9_.-]+)(\s*:.*)$", line)
+						if match and match.group(2) in mapping:
+							renamed.append(f"{match.group(2)} → {mapping[match.group(2)]}")
+							line = match.group(1) + mapping[match.group(2)] + match.group(3)
+				out.append(line)
+			return out, renamed
+
+		# 0.15 отвергает эти ключи — убираем; build — прежнее имя push.
+		v8_lines, removed = drop_top(
+			v8_lines, {"builder", "basePath", "execution_timeout", "connection"})
+		for key in removed:
+			changed.append(f"убран ключ {key} (0.15 отвергает)")
+		v8_lines, dropped = drop_any(v8_lines, r"^\s*partialLoadThreshold\s*:")
+		if dropped:
+			changed.append("убран partialLoadThreshold (0.15: полная загрузка — full:true)")
+		if any(re.match(r"^build\s*:", ln) for ln in v8_lines):
+			if any(re.match(r"^push\s*:", ln) for ln in v8_lines):
+				v8_lines, _ = drop_top(v8_lines, {"build"})
+				changed.append("удалён устаревший build: (есть push:)")
+			else:
+				v8_lines = [re.sub(r"^build(\s*:)", r"push\1", ln, count=1)
+				            for ln in v8_lines]
+				changed.append("build: → push: (прежнее имя)")
+		v8_lines, renamed = rename_provider_keys(v8_lines)
+		changed.extend(f"providers.{entry}" for entry in renamed)
+
+		# Привязка ИБ — в local-слой: infobases.origin. Если local уже
+		# объявляет базу, main-блок не трогаем: слияние YAML вручную.
+		main_keys = [re.match(r"^(infobase|infobases)\s*:", ln).group(1)
+		             for ln in v8_lines if re.match(r"^(infobase|infobases)\s*:", ln)]
+		local_has = any(re.match(r"^(infobase|infobases)\s*:", ln) for ln in local_lines)
+		if len(main_keys) > 1:
+			note("v8project.yaml: infobase и infobases в одном файле — разбери вручную")
+		elif main_keys and local_has:
+			note("v8project.yaml: привязка ИБ уже есть в local-слое — main-блок не тронут")
+		elif main_keys:
+			key = main_keys[0]
+			out, i, block = [], 0, []
+			while i < len(v8_lines):
+				line = v8_lines[i]
+				if re.match(rf"^{key}\s*:", line):
+					i += 1
+					while i < len(v8_lines) and v8_lines[i][:1] in (" ", "\t"):
+						block.append(v8_lines[i]); i += 1
+					continue
+				out.append(line); i += 1
+			if key == "infobase":
+				block = ["  origin:"] + ["  " + ln for ln in block]
+			moved = ["infobases:"] + block if key == "infobase" else [f"{key}:"] + block
+			if not local_lines:
+				local_lines = ["# Локальный оверлей машины: в git не попадает."]
+			local_lines += ["", "# Перенесено из v8project.yaml (0.15: привязка машины)."] + moved
+			v8_lines = out
+			changed.append("привязка ИБ перенесена в v8project.local.yaml (0.15)")
+
 		if apply and changed:
 			v8.write_text("\n".join(v8_lines).rstrip() + "\n", encoding="utf-8")
-			DONE.append("v8project.yaml (0.13)")
+			if local_lines:
+				local.write_text("\n".join(local_lines).rstrip() + "\n", encoding="utf-8")
+			DONE.append("v8project.yaml (0.15)")
 		for entry in changed:
 			note(f"v8project.yaml: {entry}")
 		if not changed:
-			note("v8project.yaml уже в форме 0.13")
+			note("v8project.yaml уже в форме 0.15")
 	else:
 		note("v8project.yaml нет — пропуск")
 
@@ -458,21 +528,34 @@ def main() -> int:
 		print("    … затем повтори миграцию (шаги 3 и 7 довершились бы сейчас)")
 		FAILED.append("контур не вендорен в проект")
 
-	# ── 8. Критерий чистоты + готовность v8project к 0.13 ──
+	# ── 8. Критерий чистоты + готовность v8project к 0.15 ──
 	print("10. Критерий чистоты")
 	v8 = root / "v8project.yaml"
+	local = root / "v8project.local.yaml"
 	if v8.is_file():
 		try:
 			v8text = v8.read_text(encoding="utf-8")
 		except OSError:
 			v8text = ""
-		if re.search(r"(?m)^builder\s*:", v8text):
-			print("  ⚠ v8project.yaml: ключ builder отвергается схемой 0.13 — убери и")
-			print("    задай исполнителя per-operation providers (файловая — ibcmd,")
-			print("    серверная — designer); иначе unica.run не примет конфиг")
-		if not re.search(r"(?m)^infobases\s*:", v8text) and re.search(r"(?m)^infobase\s*:", v8text):
-			print("  • v8project.yaml в форме 0.12 (infobase.connection): 0.13 читает")
-			print("    legacy на миграции; при случае перейди на infobases.origin.connection")
+		try:
+			localtext = local.read_text(encoding="utf-8") if local.is_file() else ""
+		except OSError:
+			localtext = ""
+		for key in ("builder", "basePath", "execution_timeout", "connection"):
+			if re.search(rf"(?m)^{key}\s*:", v8text):
+				print(f"  ⚠ v8project.yaml: ключ {key} отвергается 0.15 — убери")
+		if re.search(r"(?m)^\s*partialLoadThreshold\s*:", v8text):
+			print("  ⚠ v8project.yaml: partialLoadThreshold отвергается 0.15 —")
+			print("    полная загрузка запрашивается push full:true")
+		if re.search(r"(?m)^infobase\s*:", v8text):
+			print("  • v8project.yaml: infobase — legacy-синоним; канон 0.15 —")
+			print("    infobases.origin.connection в v8project.local.yaml")
+		if re.search(r"(?m)^infobases\s*:", v8text):
+			print("  • v8project.yaml: infobases читается 0.15, но канон — local-слой")
+		if not re.search(r"(?m)^infobases\s*:", localtext) \
+				and not re.search(r"(?m)^infobase\s*:", localtext):
+			print("  • v8project.local.yaml: привязка базы не объявлена — unica.run")
+			print("    не запустится без infobases.origin.connection")
 	dirty = []
 	if apply:
 		for path in root.rglob("*"):

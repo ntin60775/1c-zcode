@@ -168,7 +168,7 @@ def unica_verb(tool_name: str, root: str) -> str:
 	return short.replace("_", ".")
 
 
-# Поверхность юники 0.13: run/view/check/apply/search/docs/diff/resolve/task.*
+# Поверхность юники 0.15: run/view/check/apply/search/docs/diff/resolve/task.*
 # (0.12-имена runtime_execute/code_patch/documentation_search retir'нуты).
 # Контракт объявлен словарём unica.run {} — имена здесь карта по умолчанию,
 # сверяется живым tools/list на стенде и переопределяется contour.json.
@@ -180,15 +180,18 @@ UNICA_TOOLS_DEFAULT = {
 	"mutations": ["apply", "run"],
 	# инструменты, в аргументах которых живёт операция раннера (op)
 	"op_tools": ["run"],
-	# операции раннера, меняющие базу (захват замка инфобазы)
+	# операции раннера, меняющие базу (захват замка инфобазы).
+	# upload/apply/reset в 0.15 недоступны (#1246), но остаются в списке:
+	# если проект вернётся на 0.13/0.14, замок обязан их видеть.
 	"ib_mutating_ops": [
 		"push", "upload", "apply", "reset",
-		"infobase.dump", "infobase.restore", "launch",
+		"infobase.create", "infobase.restore", "infobase.dump", "launch",
+		"extensions.set",
 	],
 	# правила инвариантов пересборки; по умолчанию ПУСТО — semantics push/full
-	# в 0.13 отличается от fullRebuild 0.12, до сверки на стенде гейт нейтрален.
-	# rc.7 (v8-runner 0.14): canonical-имя параметра полной загрузки — fullRebuild,
-	# алиас "full" принимается (живая проба 2026-10-08) — правила с "full" работают.
+	# зависит от раннера, до сверки на стенде гейт нейтрален.
+	# v8-runner 0.15: контракт операции — словарь unica.run {}; полная
+	# загрузка запрашивается `full: true` (push), partial-load порога нет.
 	# Пример правила (включается в contour.json проекта):
 	#   {"tool": "run", "op": "push", "source_sets": "extensions",
 	#    "require": {"full": true},
@@ -198,7 +201,7 @@ UNICA_TOOLS_DEFAULT = {
 
 
 def unica_tools(root: str) -> dict:
-	"""Конфиг поверхности юники: дефолты 0.13 + override из contour.json."""
+	"""Конфиг поверхности юники: дефолты 0.15 + override из contour.json."""
 	config = contour_config(root).get("unica", {})
 	if not isinstance(config, dict):
 		return dict(UNICA_TOOLS_DEFAULT)
@@ -219,7 +222,7 @@ def unica_server_name(root: str) -> str:
 def unica_args(tool_input) -> dict:
 	"""Канонические аргументы вызова юники из tool_input.
 
-	Две живые формы входа: контракт 0.13 держит глагол/операцию на верхнем
+	Две живые формы входа: контракт 0.15 держит глагол/операцию на верхнем
 	уровне, параметры — в контейнере args (unica.run {"op": "push",
 	"args": {"full": …}}); клиент MCP может заворачивать и всё целиком
 	({"args": {"op": "push", "full": …}}). Канонический вид — слияние:

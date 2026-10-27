@@ -32,10 +32,11 @@ python3 "$SKILL_DIR/scripts/scaffold.py" all \
   (маркер проекта для 1C Platform Tools в VS Code — без него расширение
   не распознаёт проект; в новых проектах пустой, существующий не трогать:
   бывает живым OneScript-дескриптором);
-- `v8project` — каркас `v8project.yaml` (`--ib-connection`, дефолт
-  `File=build/ib`) + шаблон `v8project.local.yaml` с закреплёнными знаниями
-  деплоя (ibcmd для файловой базы из-за GTK, путь платформы каталогом без
-  strict-пина);
+- `v8project` — каркас `v8project.yaml` (общая часть) + `v8project.local.yaml`
+  с привязкой ИБ (`--ib-connection`, дефолт `File=build/ib`) и закреплёнными
+  знаниями деплоя (ibcmd для файловой базы из-за GTK, путь платформы
+  каталогом без strict-пина). Полный контракт 0.15, назначение всех полей и
+  регламент переезда со старого конфига — [references/v8project.md](references/v8project.md);
 - `git` — `git init`, `.gitignore` (только дозапись недостающих строк),
   `.gitattributes` (политика CRLF/binary — без неё `unica.check` роняет
   `repositoryReady` первым коммитом), `--remote`.
@@ -65,7 +66,8 @@ erp-mini; детектор — `scaffold.py check --dir <проект>`, exit 1 
   предлагается при бутстрапе и заводится, когда проект работает с
   правилами; git-tracked (каталожный AGENTS.md), путь идёт в `rules_dir`
   станции kd — `kd_register_project.py` подхватывает каталог сам;
-- `v8project.yaml` — контракт юники;
+- `v8project.yaml` — общий контракт юники; `v8project.local.yaml` — машинная
+  привязка ИБ, платформа и исполнители (в git не попадает);
 - `.gitignore` + `.gitattributes` — гигиена git (атрибуты закрывают
   `repositoryReady` первого коммита);
 - `packagedef` — маркер 1C Platform Tools в VS Code;
@@ -111,4 +113,6 @@ erp-mini; детектор — `scaffold.py check --dir <проект>`, exit 1 
    контура не трогать.
 4. `.gitignore` append-only у всех владельцев: layout — 1С-артефакты,
    `1c-project-bootstrap` — `.zcode`-строки.
-5. Секреты (креды ИБ) — только в `v8project.local.yaml`; каркас их не пишет.
+5. Секреты (креды ИБ) — только в `v8project.local.yaml`; общий
+   `v8project.yaml` кредов не содержит. Каркас пишет строку подключения в
+   local-слой; `user`/`password` — отдельными полями там же.

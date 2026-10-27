@@ -11,7 +11,7 @@ references/routing.md × .zcode/1c/standards-exceptions.yaml → размече�
 их применяет агент (шаги 4–6 SKILL.md). Скрипт ускоряет шаги 4–5,
 его отсутствие процедуру не ломает.
 
-Вход страниц — structured content ответа unica.check 0.13: обёртка {ok, data}
+Вход страниц — structured content ответа unica.check 0.15: обёртка {ok, data}
 или сам data; обязательное ядро — status и diagnostics[]; отсутствие
 validators даёт предупреждение (readiness-ответ юники validators не отдаёт).
 Точные имена полей места живого ответа фиксирует снапшот-фикстура.

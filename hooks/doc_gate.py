@@ -7,7 +7,7 @@
 юники, и сессия могла спроектировать решение, ни разу не открыв документацию.
 Исходники говорят, КАК сделано, но не говорят, ЧТО допустимо платформой.
 
-Поверхность Unica 0.13: сверка — unica.docs / unica.search (0.12-имена
+Поверхность Unica 0.15: сверка — unica.docs / unica.search (0.12-имена
 documentation_search/standards_search retir'нуты); мутации — unica.apply
 (код/структура) и unica.run {op: push|upload|apply|reset}. Наборы имён —
 contour_common.UNICA_TOOLS_DEFAULT с override из contour.json.
@@ -46,6 +46,7 @@ PostToolUse документационного вызова проставляе
 import json
 import re
 import sys
+import time
 from pathlib import Path
 
 from contour_common import (
@@ -72,15 +73,19 @@ BLOCK_REASON = "\n".join([
 	"Память — не источник: у памяти нет версии, а у платформы есть. Перед решением",
 	"о механизме сверься с документацией (один вызов, недорого):",
 	"",
-	"  - unica.docs {source: platform-help | development-standard |",
-	"    configuration-documentation} — справка платформы, стандарты, документация",
-	"    конфигурации (замена 0.12 documentation.search / standards.search);",
+	"  - unica.docs {source: platform-help | development-standard} — справка",
+	"    платформы и стандарты разработки;",
 	"  - unica.search — поиск по конфигурации как дополнение.",
 	"",
+	"Источник configuration-documentation в 0.15 отвечает unsupported_source:",
+	"это граница поверхности, а не ответ. Ответ задачи (status: working) тоже",
+	"не считается сверкой, пока не дочитан через unica.task.result. Поиск без",
+	"совпадений сверкой не считается.",
+	"",
 	"Сверка исходниками (unica.view, grep по src/) отвечает на вопрос «как",
-	"сделано здесь», но не «что допустимо платформой». Пустой ответ сверкой",
-	"не считается. После структурной мутации флаг сбрасывается: следующее",
-	"структурное решение — снова свежая сверка.",
+	"сделано здесь», но не «что допустимо платформой». После структурной",
+	"мутации флаг сбрасывается: следующее структурное решение — снова свежая",
+	"сверка.",
 ])
 
 
@@ -127,6 +132,17 @@ def response_text(tool_response) -> str:
 	return str(tool_response)
 
 
+def _content_nodes(payload):
+	"""Словари ответа, где может лежать содержимое: корень, data, result."""
+	if not isinstance(payload, dict):
+		return
+	yield payload
+	for key in ("data", "result"):
+		node = payload.get(key)
+		if isinstance(node, dict):
+			yield node
+
+
 def _live_section_answers(sections) -> "bool | None":
 	"""Живой провайдер с непустыми хитами; None — секции не распознаны."""
 	saw_sections = False
@@ -134,7 +150,7 @@ def _live_section_answers(sections) -> "bool | None":
 		if not isinstance(section, dict):
 			continue
 		saw_sections = True
-		if section.get("status") != "ok":
+		if str(section.get("status") or "").lower() != "ok":
 			continue
 		hits = section.get("hits")
 		if isinstance(hits, list) and hits:
@@ -142,38 +158,120 @@ def _live_section_answers(sections) -> "bool | None":
 	return False if saw_sections else None
 
 
-def _sections_meaningful(text: str) -> "bool | None":
+def _sections_meaningful(payload) -> "bool | None":
 	"""Осмысленность по секциям ответа docs-провайдеров.
 
 	Секции недоступных провайдеров (status unavailable, пустые hits) ответ
 	не роняют, если другой провайдер ответил содержательно. None — форму
 	«JSON со списком sections» распознать не удалось.
 	"""
-	try:
-		payload = json.loads(text)
-	except json.JSONDecodeError:
-		return None
+	for node in _content_nodes(payload):
+		sections = node.get("sections")
+		if isinstance(sections, list):
+			return _live_section_answers(sections)
+	return None
+
+
+def _non_answer(payload) -> "str | None":
+	"""'task' — принятая задача, 'error' — отказ/пустота; None — ответ.
+
+	0.15 умеет отвечать задачей (status: working) и отказывать кодом
+	unsupported_source; ни то, ни другое не является сверкой.
+	"""
 	if not isinstance(payload, dict):
 		return None
-	for node in (payload, payload.get("data")):
-		if isinstance(node, dict) and isinstance(node.get("sections"), list):
-			return _live_section_answers(node["sections"])
+	for node in _content_nodes(payload):
+		status = str(node.get("status") or "").lower()
+		if status in ("working", "pending", "accepted", "queued"):
+			return "task"
+		if status in ("unavailable", "error", "failed", "cancelled"):
+			return "error"
+		code = str(node.get("code") or "").lower()
+		if code in ("unsupported_source", "provider_unavailable", "unavailable"):
+			return "error"
+		if node.get("ok") is False:
+			return "error"
 	return None
+
+
+def _has_content(payload) -> bool:
+	"""Есть ли в ответе непустые хиты, элементы или текст документа."""
+	if not isinstance(payload, dict):
+		return False
+	for node in _content_nodes(payload):
+		for key in ("items", "hits", "matches", "documents", "results"):
+			value = node.get(key)
+			if isinstance(value, list) and value:
+				return True
+		document = node.get("document")
+		if isinstance(document, dict) and str(document.get("text") or "").strip():
+			return True
+	return False
+
+
+def _zero_totals(payload) -> bool:
+	"""Сводка объёма говорит «совпадений нет», а списков содержимого нет."""
+	if not isinstance(payload, dict):
+		return False
+	for node in _content_nodes(payload):
+		totals = node.get("totals")
+		if not isinstance(totals, dict):
+			continue
+		numbers = [value for value in totals.values()
+		           if isinstance(value, (int, float)) and not isinstance(value, bool)]
+		if numbers and all(value == 0 for value in numbers):
+			if not any(isinstance(node.get(key), list) and node[key]
+			           for key in ("items", "hits", "matches", "documents", "results")):
+				return True
+	return False
 
 
 def docs_result_is_meaningful(text: str) -> bool:
 	"""Непустой результат сверки: есть содержимое, нет признаков пустоты."""
 	if not text.strip():
 		return False
-	by_sections = _sections_meaningful(text)
-	if by_sections is not None:
-		return by_sections
+	try:
+		payload = json.loads(text)
+	except json.JSONDecodeError:
+		payload = None
+	if isinstance(payload, dict):
+		if _non_answer(payload) is not None:
+			return False
+		by_sections = _sections_meaningful(payload)
+		if by_sections is not None:
+			return by_sections
+		if _has_content(payload):
+			return True
+		if _zero_totals(payload):
+			return False
+		if any(isinstance(node.get(key), list) and not node[key]
+		       for node in _content_nodes(payload)
+		       for key in ("items", "hits", "matches", "documents", "results")):
+			return False
 	# Ответ вне формы «JSON со sections» — прежняя эвристика по маркерам.
 	if re.search(r'"hits"\s*:\s*\[\s*\]', text):
 		return False
-	if re.search(r'"status"\s*:\s*"unavailable"', text):
+	if re.search(r'"status"\s*:\s*"(?:unavailable|working|error|failed)"', text):
+		return False
+	if re.search(r'"code"\s*:\s*"(?:unsupported_source|provider_unavailable)"', text):
 		return False
 	return True
+
+
+def task_id_from(payload) -> str:
+	"""taskId из ответа или аргументов вызова; '' — задачи нет."""
+	if not isinstance(payload, dict):
+		return ""
+	for node in _content_nodes(payload):
+		value = node.get("taskId")
+		if value:
+			return str(value)
+	return ""
+
+
+def docs_task_pending(payload) -> bool:
+	"""Ответ — принятая задача, а не готовый результат."""
+	return isinstance(payload, dict) and _non_answer(payload) == "task"
 
 
 def apply_is_publication(tool_input: dict) -> bool:
@@ -189,7 +287,7 @@ def apply_is_publication(tool_input: dict) -> bool:
 def run_op(tool_input: dict) -> str:
 	"""op раннера: на верхнем уровне вызова, не во вложенных args операции.
 
-	Вложенные args — аргументы операции (контракт unica 0.13); op и dryRun
+	Вложенные args — аргументы операции (контракт unica 0.15); op и dryRun
 	живут рядом с ними. Резолв с верхнего уровня с фолбэком на вложенные,
 	иначе канонический вызов классифицируется как «не мутация».
 	"""
@@ -203,7 +301,7 @@ def run_is_execution(tool_input: dict) -> bool:
 	return tool_input.get("dryRun") is not True
 
 
-# ── классификация мутаций (0.13) ─────────────────────────────────────────────
+# ── классификация мутаций (0.15) ─────────────────────────────────────────────
 
 def is_structural_mutation(short: str, tool_input: dict, verify_ops: set) -> bool:
 	"""Структурное решение (сбрасывает флаг) либо правка кода (не сбрасывает).
@@ -296,22 +394,69 @@ def handle_pre(event: dict) -> int:
 	return 0
 
 
+def _prune_tasks(state: dict) -> None:
+	"""Старые задачи не должны жить дольше сессии: чистим по возрасту."""
+	tasks = state.get("docs_tasks")
+	if not isinstance(tasks, dict):
+		state["docs_tasks"] = {}
+		return
+	cutoff = time.time() - 3600
+	state["docs_tasks"] = {key: ts for key, ts in tasks.items()
+	                       if isinstance(ts, (int, float)) and ts >= cutoff}
+
+
+def _json_or_none(text: str):
+	try:
+		return json.loads(text)
+	except json.JSONDecodeError:
+		return None
+
+
 def handle_post(event: dict) -> int:
-	"""PostToolUse: результат документационного вызова → флаг verified."""
+	"""PostToolUse: результат документационного вызова → флаг verified.
+
+	0.15 умеет отвечать задачей: принятие задачи само по себе сверкой не
+	считается, поэтому taskId запоминается, а флаг ставится на ответ
+	unica.task.result. Успешная сверка липкая: неудачный дополнительный
+	вызов её не отменяет — флаг снимает только структурная мутация.
+	"""
 	tool_name = str(event.get("tool_name") or "")
 	cwd = str(event.get("cwd") or "")
 	sid = session_id(event)
 	root = project_root(cwd)
 	short = unica_verb(tool_name, root)
-	if short not in set(unica_tools(root).get("docs") or []):
-		return 0
+	tools = unica_tools(root)
 	state = load_state(sid)
+	_prune_tasks(state)
+
+	if short in ("task.result", "task.get"):
+		payload = _json_or_none(response_text(event.get("tool_response")))
+		task_id = task_id_from(payload)
+		if not task_id:
+			args = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+			task_id = str(args.get("taskId") or "")
+		if task_id and task_id in state.get("docs_tasks", {}):
+			if not (event.get("is_error") or event.get("isError")) \
+					and docs_result_is_meaningful(response_text(event.get("tool_response"))):
+				state["verified"] = True
+				state["docs_tasks"].pop(task_id, None)
+			save_state(sid, state)
+		return 0
+
+	if short not in set(tools.get("docs") or []):
+		return 0
 	state["pending"] = False
 	if event.get("is_error") or event.get("isError"):
-		state["verified"] = False
+		save_state(sid, state)
+		return 0
+	text = response_text(event.get("tool_response"))
+	payload = _json_or_none(text)
+	if docs_task_pending(payload):
+		task_id = task_id_from(payload)
+		if task_id:
+			state.setdefault("docs_tasks", {})[task_id] = time.time()
 	else:
-		text = response_text(event.get("tool_response"))
-		state["verified"] = docs_result_is_meaningful(text)
+		state["verified"] = bool(state.get("verified")) or docs_result_is_meaningful(text)
 	save_state(sid, state)
 	return 0
 

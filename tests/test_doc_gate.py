@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Тесты doc_gate.py (docs-before-design): сверка документацией до мутаций.
 
-Строгий канон боевого проекта, поверхность Unica 0.13: сверка — unica.docs /
+Строгий канон боевого проекта, поверхность Unica 0.15: сверка — unica.docs /
 unica.search; мутации — unica.apply (код/структура) и unica.run {op: push|
 upload|apply|reset}; серия правок кода (ops code.*) флаг не сбрасывает.
 
@@ -24,6 +24,16 @@ from _lib import audit_entries, check, run_hook, summary  # noqa: E402
 DOCS_OK_RESPONSE = {"content": [{"type": "text", "text": '{"results": [{"id": "doc-1", "title": "Хеширование"}]}'}]}
 DOCS_EMPTY_RESPONSE = {"content": [{"type": "text", "text": '{"hits": []}'}]}
 SEARCH_EMPTY_RESPONSE = {"content": [{"type": "text", "text": '{"matches": []}'}]}
+DOCS_UNSUPPORTED = {"content": [{"type": "text", "text": json.dumps(
+	{"ok": False, "code": "unsupported_source",
+	 "message": "configuration-documentation is not available"})}]}
+DOCS_WORKING = {"content": [{"type": "text", "text": json.dumps(
+	{"status": "working", "taskId": "task-doc-1"})}]}
+DOCS_TASK_RESULT = {"content": [{"type": "text", "text": json.dumps(
+	{"status": "completed", "taskId": "task-doc-1",
+	 "result": {"sections": [{"status": "ok", "hits": [{"id": "doc-9"}]}]}})}]}
+SEARCH_ZERO_TOTALS = {"content": [{"type": "text", "text": json.dumps(
+	{"data": {"totals": {"matches": 0, "files": 0}, "items": []}})}]}
 
 DOCS_SECTIONS_MIXED = {"content": [{"type": "text", "text": json.dumps({"sections": [
 	{"provider": "platform-syntax-help", "status": "unavailable", "hits": []},
@@ -191,11 +201,33 @@ def main() -> int:
 		check("все секции недоступны — не сверка", r.returncode == 2, f"exit {r.returncode}")
 		post("mcp__unica__search", {"query": "динсписок"}, SEARCH_EMPTY_RESPONSE)
 		r = code_edit()
-		check("пустой unica.search сознательно зачтён", r.returncode == 0, f"exit {r.returncode}")
+		check("пустой unica.search не сверка", r.returncode == 2, f"exit {r.returncode}")
 		publish("tok-4")
 		docs("секции в data", DOCS_SECTIONS_WRAPPED)
 		r = code_edit()
 		check("секции внутри data тоже разобраны", r.returncode == 0, f"exit {r.returncode}")
+
+		# ── 0.15: отказ источника, задача и нулевая сводка — не сверка ──
+		publish("tok-5")
+		docs("configuration-documentation", DOCS_UNSUPPORTED)
+		r = code_edit()
+		check("unsupported_source не сверка", r.returncode == 2, f"exit {r.returncode}")
+		docs("долгий вопрос", DOCS_WORKING)
+		r = code_edit()
+		check("status: working не сверка", r.returncode == 2, f"exit {r.returncode}")
+		post("mcp__unica__task_result", {"taskId": "task-doc-1"}, DOCS_TASK_RESULT)
+		r = code_edit()
+		check("ответ task.result закрывает сверку", r.returncode == 0, f"exit {r.returncode}")
+		publish("tok-6")
+		post("mcp__unica__search", {"query": "нет"}, SEARCH_ZERO_TOTALS)
+		r = code_edit()
+		check("нулевая сводка поиска не сверка", r.returncode == 2, f"exit {r.returncode}")
+
+		# ── успешная сверка липкая: пустой доп. вызов её не отменяет ──
+		docs("живой ответ")
+		docs("пустой повтор", DOCS_EMPTY_RESPONSE)
+		r = code_edit()
+		check("пустой повтор после успеха не отменяет сверку", r.returncode == 0, f"exit {r.returncode}")
 
 		# ── состояние сессионно: другая сессия не наследует сверку ──
 		r = code_edit(sid="s2")

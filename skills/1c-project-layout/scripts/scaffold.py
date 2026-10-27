@@ -264,13 +264,14 @@ def cmd_structure(args: argparse.Namespace) -> int:
 def cmd_v8project(args: argparse.Namespace) -> int:
 	log("v8project.yaml:")
 	status = copy_template(
-		"v8project.template.yaml", "v8project.yaml", args.dry_run, args.force,
-		{"{ib_connection}": args.ib_connection})
+		"v8project.template.yaml", "v8project.yaml", args.dry_run, args.force)
 	log("v8project.local.yaml:")
 	copy_template("v8project.local.template.yaml", "v8project.local.yaml",
-	              args.dry_run, args.force)
+	              args.dry_run, args.force,
+	              {"{ib_connection}": args.ib_connection})
 	if status != "exists" and not args.dry_run:
-		log("заполни tools.platform.path под машину (контейнер/установка платформы)")
+		log("заполни tools.platform.path под машину (контейнер/установка платформы); "
+		    "привязка ИБ — в v8project.local.yaml")
 	return 0
 
 
@@ -421,7 +422,8 @@ def main(argv: list[str] | None = None) -> int:
 		parents=[common])
 	p_v8project.add_argument("--ib-connection", dest="ib_connection",
 	                         default="File=build/ib",
-	                         help="строка подключения ИБ (infobases.origin.connection)")
+	                         help="строка подключения ИБ (infobases.origin.connection "
+	                              "в v8project.local.yaml)")
 	p_v8project.set_defaults(func=cmd_v8project)
 
 	p_git = sub.add_parser(
@@ -443,7 +445,8 @@ def main(argv: list[str] | None = None) -> int:
 	                   help=f"компоненты (csv): {','.join(COMPONENT_DIRS)}; дефолт {DEFAULT_COMPONENTS}")
 	p_all.add_argument("--remote", help="URL remote origin (опционально)")
 	p_all.add_argument("--ib-connection", dest="ib_connection",
-	                   default="File=build/ib", help="строка подключения ИБ")
+	                   default="File=build/ib",
+	                   help="строка подключения ИБ (local-слой)")
 	p_all.set_defaults(func=cmd_all)
 
 	args = parser.parse_args(argv)

@@ -4,8 +4,8 @@ ZCode-плагин контура 1С-разработки: гейты, e2e-те
 bootstrap и миграция. Нативный порт [1c-omp](../1c-omp) на механики ZCode
 (карта переноса — [docs/migration-map.md](docs/migration-map.md)).
 
-Работает вместе с Unica (`mcp__unica__*`, мягкая зависимость — каналы и
-переключение в [docs/UNICA.md](docs/UNICA.md)) и новым тест-контуром
+Работает вместе с Unica 0.15+ (`mcp__unica__*`, мягкая зависимость — каналы
+и переключение в [docs/UNICA.md](docs/UNICA.md)) и новым тест-контуром
 1c-testpilot + 1c-mcp-toolkit (объявляются на уровне проекта).
 
 ## Состав

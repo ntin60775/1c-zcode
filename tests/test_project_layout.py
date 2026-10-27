@@ -124,7 +124,10 @@ def main() -> None:
 		_lib.check("каркас: main + path + EXTENSION-комментарий",
 		           "name: main" in v8 and "path: src/cf" in v8
 		           and "type: EXTENSION" in v8, v8[:200])
-		_lib.check("каркас: дефолт File=build/ib", "File=build/ib" in v8)
+		_lib.check("каркас: инфобазы не в общем файле", "infobases:" not in v8, v8[:300])
+		local5 = (Path(p5) / "v8project.local.yaml").read_text(encoding="utf-8")
+		_lib.check("каркас: дефолт File=build/ib в local-слое",
+		           "File=build/ib" in local5, local5[:300])
 		_lib.check("local-оверлей создан",
 		           os.path.isfile(os.path.join(p5, "v8project.local.yaml")))
 		(Path(p5) / "v8project.yaml").write_text("# свой контракт\n", encoding="utf-8")
@@ -134,8 +137,11 @@ def main() -> None:
 		           == "# свой контракт\n")
 		p5b = os.path.join(tmp, "v8b")
 		sh("v8project", "--dir", p5b, "--ib-connection", 'Srvr="s";Ref="b";')
-		_lib.check("--ib-connection попадает в каркас",
-		           'Srvr="s";Ref="b";' in (Path(p5b) / "v8project.yaml")
+		_lib.check("--ib-connection попадает в local-слой",
+		           'Srvr="s";Ref="b";' in (Path(p5b) / "v8project.local.yaml")
+		           .read_text(encoding="utf-8"))
+		_lib.check("--ib-connection не утекает в общий файл",
+		           'Srvr="s";Ref="b";' not in (Path(p5b) / "v8project.yaml")
 		           .read_text(encoding="utf-8"))
 
 		# ── 8. git: init, gitignore append-only, gitattributes, remote ──

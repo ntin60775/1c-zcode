@@ -29,22 +29,47 @@ for _rel in ("../../hooks", "../hooks"):
 	if (_p / "contour_common.py").is_file():
 		sys.path.insert(0, str(_p))
 
+# Unica 0.15 обслуживает только 2025-06-18, 2025-11-25 и 2026-07-28.
+# 2025-11-25 — обычная сессия с полным tools/list (без страниц каталога).
 HANDSHAKE = (
-	'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"1c-zcode-doctor","version":"0"}}}\n'
+	'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"1c-zcode-doctor","version":"0"}}}\n'
 	'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'
 	'{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n'
 )
 
 # Глаголы, без которых контур неработоспособен (по UNICA_TOOLS_DEFAULT).
-REQUIRED_VERBS = {"run", "apply", "docs", "view", "check", "search"}
+REQUIRED_VERBS = {"run", "apply", "docs", "view", "check", "search", "resolve", "diff"}
 
 
-def latest_plugin_cache() -> Path | None:
-	"""Свежий кэш плагина unica* с bootstrap'ом; None — не найден.
+def installed_unica():
+	"""Единственная запись unica из installed_plugins.json либо None.
 
-	Кэш: cache/<маркетплейс>/<плагин>/<версия>/ — берём каталоги, где лежит
-	bootstrap (отсев маркетплейс-уровня), свежий по mtime.
+	При двух каналах записи две; доктор считает это ошибкой, а ping не
+	угадывает, какую установку проверять, — возвращает None и работает по
+	кэшу (лучше явное «несколько каналов» в сообщении доктора).
 	"""
+	registry = Path.home() / ".zcode" / "cli" / "plugins" / "installed_plugins.json"
+	try:
+		data = json.loads(registry.read_text(encoding="utf-8"))
+	except (OSError, json.JSONDecodeError):
+		return None
+	plugins = data.get("plugins") if isinstance(data, dict) else data
+	entries = [p for p in plugins or []
+	           if isinstance(p, dict) and str(p.get("name") or "") == "unica"]
+	return entries[0] if len(entries) == 1 else None
+
+
+def latest_plugin_cache(entry=None) -> Path | None:
+	"""Кэш установленной unica с bootstrap'ом; None — не найден.
+
+	Приоритет — installPath из реестра: после смены канала на машине живут
+	кэши обоих каналов, и выбор по mtime может запустить старый бинарь.
+	Фолбэк — свежий каталог cache/unica*/*/* с bootstrap.
+	"""
+	if entry:
+		install = Path(str(entry.get("installPath") or ""))
+		if (install / "bootstrap" / "bin" / "linux-x64" / "unica-bootstrap").is_file():
+			return install
 	base = Path.home() / ".zcode" / "cli" / "plugins" / "cache"
 	candidates = [
 		p for p in base.glob("unica*/*/*")
@@ -53,6 +78,15 @@ def latest_plugin_cache() -> Path | None:
 	if not candidates:
 		return None
 	return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def runtime_cache_dir(entry=None) -> str:
+	"""Каталог рантаймов установки; несуществующий путь bootstrap создаст сам."""
+	data_dir = Path.home() / ".zcode" / "cli" / "plugins" / "data"
+	if entry:
+		return str(data_dir / str(entry.get("id") or "unica@unica") / "runtimes")
+	dirs = sorted(data_dir.glob("unica@*/runtimes"))
+	return str(dirs[0]) if dirs else str(Path(tempfile.gettempdir()) / "unica-ping-runtimes")
 
 
 def parse_tools(text: str):
@@ -76,7 +110,8 @@ def parse_tools(text: str):
 
 def ping(timeout_s: int):
 	"""(код, сообщение, verbs) — код: 0 ок, 1 упал, 2 таймаут."""
-	cache = latest_plugin_cache()
+	entry = installed_unica()
+	cache = latest_plugin_cache(entry)
 	if cache is None:
 		return 1, "кэш плагина unica не найден (unica не установлена?)", set()
 	bootstrap = cache / "bootstrap" / "bin" / "linux-x64" / "unica-bootstrap"
@@ -85,14 +120,11 @@ def ping(timeout_s: int):
 	if not os.access(str(bootstrap), os.X_OK):
 		return 1, (f"нет exec-бита: {bootstrap} — распаковщик ZCode теряет права; "
 		           f"лечение: chmod +x '{cache}/bootstrap/bin/'*/*/unica-bootstrap*"), set()
-	data_dir = Path.home() / ".zcode" / "cli" / "plugins" / "data"
-	cache_dirs = sorted(data_dir.glob("unica@*/runtimes"))
 	env = dict(
 		os.environ,
 		CLAUDE_PLUGIN_ROOT=str(cache),
 		UNICA_HOST_CONTEXT_REQUIRED="1",
-		UNICA_RUNTIME_CACHE_DIR=str(cache_dirs[0]) if cache_dirs
-		else str(Path(tempfile.gettempdir()) / "unica-ping-runtimes"),
+		UNICA_RUNTIME_CACHE_DIR=runtime_cache_dir(entry),
 	)
 	try:
 		done = subprocess.run(

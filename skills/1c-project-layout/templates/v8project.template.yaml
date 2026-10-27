@@ -1,13 +1,13 @@
-# Контракт v8-runner/unica (формат — references/tooling/v8project.md плагина
-# unica). Машинные адреса, платформа и креды — в v8project.local.yaml.
-# Ключи execution_timeout и push.partialLoadThreshold НЕ использовать:
-# v8-runner 0.14 (unica rc.7+) отвергает их как invalid_source (общего
-# дедлайна и порога частичной загрузки больше нет — per-step в раннере).
+# Контракт v8-runner/unica 0.15 (формат — references/tooling/v8project.md
+# плагина unica). Общая часть проекта; машинные адреса, платформа и креды —
+# в v8project.local.yaml.
+#
+# Не использовать: builder, basePath, execution_timeout,
+# push.partialLoadThreshold, верхнеуровневый connection. v8-runner 0.15
+# отвергает их как invalid_source. Полная загрузка — push full:true.
+# Привязка инфобазы — только в local-слое: infobases.origin.
 workPath: 'build'
 format: DESIGNER
-infobases:
-  origin:
-    connection: '{ib_connection}'
 source-set:
   - name: main
     type: CONFIGURATION

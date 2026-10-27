@@ -190,9 +190,13 @@ def main() -> int:
 	check("apply: KB-секция не тронута", "<!-- KB (ontoship) -->" in agents, "потеряна")
 
 	v8 = (p / "v8project.yaml").read_text(encoding="utf-8")
+	local = (p / "v8project.local.yaml").read_text(encoding="utf-8")
 	check("apply: builder убран", "builder" not in v8, v8[:200])
-	check("apply: infobases.origin разведён",
-	      "infobases:" in v8 and "origin:" in v8 and "File=/tmp/fake1c" in v8, v8[:300])
+	check("apply: привязка ИБ ушла из общего файла",
+	      "infobase" not in v8 and "File=/tmp/fake1c" not in v8, v8[:300])
+	check("apply: infobases.origin в local-слое",
+	      "infobases:" in local and "origin:" in local
+	      and "File=/tmp/fake1c" in local, local[:300])
 	check("apply: tests-блок снят", "yaxunit" not in v8 and "execution_timeout_seconds" not in v8, v8[:300])
 	check("apply: va-подблок снят", "vanessa" not in v8 and "\nva:" not in v8, v8[:300])
 	check("apply: имя проекта живо", "name: fakeproj" in v8, v8[:200])

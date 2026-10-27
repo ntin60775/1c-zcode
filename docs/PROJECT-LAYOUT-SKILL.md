@@ -122,6 +122,7 @@ scaffold.py structure --dir <проект> --name <slug>
     [--components tools-mcp,docs]   # сверх обязательной топологии; дефолт: нет
     [--dry-run] [--force]
 scaffold.py v8project --dir <проект> [--ib-connection 'File=build/ib']
+    # --ib-connection уходит в v8project.local.yaml (0.15), не в общий файл
     [--dry-run] [--force]
 scaffold.py git --dir <проект> [--remote git@host:owner/repo.git]
     [--dry-run] [--force]
@@ -145,22 +146,20 @@ scaffold.py all …    # structure + v8project + git
   нет): текст из проверенного живым `unica.check` файла (`eol=crlf` для
   bsl/xml/os, binary для png/cf/cfe/epf/erf/архивов). Закрывает падение
   `repositoryReady` после первого коммита.
-- **`v8project.local.yaml`** — шаблон с закреплёнными знаниями деплоя
-  (см. § 6), не 0600: секретов в нём нет, креды появятся — потребуют
-  отдельной политики.
+- **`v8project.local.yaml`** — шаблон с привязкой ИБ и закреплёнными
+  знаниями деплоя (см. § 6), не 0600: `connection` без встроенных кредов,
+  `user`/`password` — отдельными полями и только здесь. Полный контракт
+  полей и миграция — `skills/1c-project-layout/references/v8project.md`.
 
 ## 6. Каркасы (содержание шаблонов)
 
-`v8project.yaml` — проверенный живым деплоем каркас (v8-runner 0.14 /
-unica rc.7+: `execution_timeout` и `push.partialLoadThreshold` отвергаются
-как invalid_source — не ставить):
+`v8project.yaml` — проверенный контрактом 0.15 каркас. `builder`, `basePath`,
+`execution_timeout`, `push.partialLoadThreshold` и верхнеуровневый
+`connection` v8-runner 0.15 отвергает; привязки ИБ здесь нет:
 
 ```yaml
 workPath: 'build'
 format: DESIGNER
-infobases:
-  origin:
-    connection: 'File=build/ib'
 source-set:
   - name: main
     type: CONFIGURATION
@@ -171,14 +170,19 @@ source-set:
   #   path: src/cfe/<ИмяРасширения>
 ```
 
-`v8project.local.yaml` — шаблон несёт знания, открытые эмпирически:
+`v8project.local.yaml` — машинный слой; шаблон несёт знания, открытые
+эмпирически:
 
 ```yaml
 # Локальный оверлей машины: в git не попадает.
 # Файловая база на Linux — мутации через ibcmd (headless): пакетный
 # конфигуратор падает по GTK в Wayland-сессии (разовый обход:
-# env -u WAYLAND_DISPLAY GDK_BACKEND=x11). Ключ builder не используется
-# (0.13: per-operation providers).
+# env -u WAYLAND_DISPLAY GDK_BACKEND=x11). 0.15: per-operation providers.
+infobases:
+  origin:
+    connection: 'File=build/ib'   # БЕЗ user/password внутри строки
+    # user: <пользователь ИБ>
+    # password: <не в git, не в чат>
 providers:
   push: ibcmd
   extensions: ibcmd
@@ -187,9 +191,6 @@ tools:
     path: '/opt/1cv8/x86_64/<версия>'   # каталог установки, БЕЗ strict-пина:
                                         # строгая проверка версии ломается
                                         # на установке без версии в пути
-# infobases:
-#   origin:
-#     user: <пользователь ИБ>          # пароль — не в git, не в чат
 # contour: test   # тест-дерево; прод по умолчанию (fail-closed), см. 1c-contour
 ```
 
@@ -238,11 +239,11 @@ tests/e2e) дословно; для `src/cf`, `tools/mcp`, `docs` — по то�
 
 ## 10. Открытые вопросы имплементации
 
-1. Объявляются ли `epf`/`erf` в `v8project.yaml` 0.13 отдельными типами
+1. Объявляются ли `epf`/`erf` в `v8project.yaml` 0.15 отдельными типами
    source-set (или живут вне source-set'ов)? Сверить по словарю `unica.run`
    и докам юники; до решения — не объявлять, правки через `unica.apply`.
 2. ~~`execution_timeout`/`partialLoadThreshold`~~ — снято 2026-10-08:
-   v8-runner 0.14 (unica rc.7) отвергает оба ключа как invalid_source;
-   из шаблона и живых проектов убраны.
+   v8-runner 0.14 (unica rc.7) отвергал оба ключа; 0.15 продолжает
+   отвергать, из шаблона и живых проектов убраны.
 3. ~~Точка роста: проверка топологии в `doctor.py`~~ — сделано в v0.4.39
    (блок 3b: зовёт `scaffold check`, неполный минимум = FAIL).
