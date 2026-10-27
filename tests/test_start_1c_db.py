@@ -90,6 +90,40 @@ try:
         fields[1] == "6005" and fields[4] == "t1",
         f"fields={fields}",
     )
+    # 5. wait_client #36: дедлайн по стенному времени, не по числу итераций.
+    #    Пока клиент не подключён, прокси удерживает execute_code и каждая
+    #    проверка стоит ~30 с — счётчик итераций раздувал фазу до ~2 часов.
+    harness = f"""set -euo pipefail
+eval "$(sed -n '/^wait_client() {{/,/^}}/p' {SCRIPT})"
+URL="http://127.0.0.1:65535/mcp"; LOG="{tmp}/fake.log"
+client_alive() {{ return 1; }}
+export WAIT_DEADLINE=3
+start=$(date +%s)
+rc=0; wait_client тест || rc=$?
+echo "dur=$(($(date +%s)-start)) rc=$rc"
+unset WAIT_DEADLINE
+n=0
+client_alive() {{ n=$((n+1)); [ "$n" -ge 3 ]; }}
+wait_client тест2 && echo "ok=$n"
+"""
+    r = subprocess.run(["bash", "-c", harness], capture_output=True, text=True)
+    dur = next((ln for ln in r.stdout.splitlines() if ln.startswith("dur=")), "")
+    waited = int(dur[4:].split()[0]) if dur else -1
+    _lib.check(
+        "wait_client: клиент не пришёл — выход 1 по дедлайну (~WAIT_DEADLINE с)",
+        "rc=1" in dur and 2 <= waited <= 12,
+        f"dur={dur!r}, stdout={r.stdout!r}",
+    )
+    _lib.check(
+        "wait_client: честное сообщение с дедлайном вместо «~420с»",
+        "не подключился за 0 мин" in r.stderr,
+        f"stderr={r.stderr!r}",
+    )
+    _lib.check(
+        "wait_client: подключившийся клиент завершает фазу успехом",
+        r.returncode == 0 and "ok=3" in r.stdout and "✓ подключён" in r.stdout,
+        f"rc={r.returncode}, stdout={r.stdout!r}",
+    )
 finally:
     import shutil
     shutil.rmtree(tmp, ignore_errors=True)

@@ -466,17 +466,27 @@ launch_client() { # $1 — значение /C
 }
 
 wait_client() { # $1 — метка фазы
-	echo -n "• фаза $1: жду подключения клиента к $URL "
-	# первый старт под Xvfb с software-GL грузит интерфейс до ~3 минут — норма
-	for _ in $(seq 1 210); do
+	# Дедлайн по стенному времени, не по числу итераций: пока клиент не
+	# подключён, прокси удерживает execute_code и каждая проверка упирается
+	# в timeout 30 (грабля SSE-keepalive выше) — счётчик итераций раздувал
+	# фазу с обещанных ~420 с до ~2 часов (ишью #36).
+	local total=${WAIT_DEADLINE:-420}
+	local deadline=$(( $(date +%s) + total ))
+	local next_report=0 now
+	echo "• фаза $1: жду подключения клиента к $URL (до $(( total / 60 )) мин)"
+	while (( $(date +%s) < deadline )); do
 		if client_alive; then
 			echo "— ✓ подключён"
 			return 0
 		fi
-		printf '.'
+		now=$(date +%s)
+		if (( now >= next_report )); then
+			echo "  … жду, до дедлайна $(( deadline - now )) с"
+			next_report=$(( now + 30 ))
+		fi
 		sleep 2
 	done
-	echo "— ✗ не подключился за ~420с; смотри $LOG" >&2
+	echo "— ✗ не подключился за $(( total / 60 )) мин; смотри $LOG" >&2
 	return 1
 }
 
