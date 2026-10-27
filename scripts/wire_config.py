@@ -40,8 +40,8 @@ agents-section.md. Без маркеров файл не правится — в
 
 Режим --check: exit 1, если config.json не совпадает с ожидаемой разводкой
 или секция AGENTS.md разошлась с шаблоном (для CI и /1c-doctor). Секретов
-не пишет: креды тестовых баз живут в .zcode/testpilot/profiles.yaml через
-password_env.
+не пишет: креды тестовых баз живут в .zcode/testpilot/profiles.yaml (поле
+password; файл машинно-локальный, вне git).
 
 Запуск: python3 wire_config.py <project-root> [--check]
 """

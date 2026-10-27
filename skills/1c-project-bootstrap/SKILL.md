@@ -25,8 +25,9 @@ when_to_use: "Проект 1С подключается к контуру (вп�
    `mcp_gate.dangerous`, `style.pack`. Существующие
    значения wire не затирает.
 2. **`.zcode/testpilot/profiles.yaml`** — профили тестовых баз (если нет):
-   по образцу `.zcode/1c/templates/profiles.example.yaml`. Пароли — только
-   `password_env`; значения переменных живут вне git (окружение машины).
+   по образцу `.zcode/1c/templates/profiles.example.yaml`. Пароль — полем
+   `password` в этом файле: он машинно-локальный и вне git (`password_env`
+   апстрим тоже принимает, канон контура — `password`).
    У профиля для e2e нужен `base` (путь к тестовой копии базы) и
    `desktop: isolated`. E2E-тесты живут в `tests/e2e/` проекта
    (workflow `1c-e2e-author` пишет их сам); XML-сценарии (`uilog`) —
@@ -128,4 +129,4 @@ when_to_use: "Проект 1С подключается к контуру (вп�
   машинный слой (testpilot, прокси 1c-db, xvfb) — см. «Машинный слой» выше,
   это машина, не проект.
 - Не трогает `v8project.yaml` (внешний контракт v8-runner/unica).
-- Не пишет креды никуда, кроме `password_env`-переменных.
+- Не пишет креды никуда, кроме поля `password` в profiles.yaml (вне git).

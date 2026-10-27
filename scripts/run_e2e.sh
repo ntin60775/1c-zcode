@@ -44,10 +44,12 @@ PROFILES="$ROOT/.zcode/testpilot/profiles.yaml"
 	exit 2
 }
 
-# ── пароль: password_env профиля, пусто в окружении → добрать из local-оверлея.
-# Значения не печатаются — сюда только экспорт. Поддерживаются обе раскладки
-# profiles.yaml (с корневым profiles: и плоская) и оба места пароля в
-# v8project.local.yaml (плоский password: и вложенный infobases.origin.password).
+# ── пароль: канон контура — поле password в профиле (файл вне git), его
+# читает testpilot сам. Легаси: password_env профиля (имя env-переменной) —
+# пусто в окружении → добрать из local-оверлея. Значения не печатаются —
+# сюда только экспорт. Поддерживаются обе раскладки profiles.yaml (с
+# корневым profiles: и плоская) и оба места пароля в v8project.local.yaml
+# (плоский password: и вложенный infobases.origin.password).
 eval "$("$PY" - "$PROFILES" "$PROFILE" "$ROOT" <<'PY'
 import os, re, sys, pathlib
 profiles_path, profile, root = sys.argv[1], sys.argv[2], pathlib.Path(sys.argv[3])
@@ -69,22 +71,26 @@ for i, line in enumerate(lines):
                 break
         break
 text = "\n".join(block)
-env_name = re.search(r"password_env:\s*['\"]?([\w]+)", text)
-if env_name and not os.environ.get(env_name.group(1)):
-    pwd = ""
-    local = root / "v8project.local.yaml"
-    if local.is_file():
-        ltext = local.read_text(encoding="utf-8")
-        m = re.search(r"(?m)^password:\s*['\"]?(.+?)\s*['\"]?\s*$", ltext)
-        if not m:  # вложенный infobases.origin.password
-            m = re.search(r"(?ms)^infobases:.*?password:\s*['\"]?(.+?)\s*['\"]?\s*$", ltext)
-        pwd = m.group(1) if m else ""
-    if pwd:
-        safe = pwd.replace("'", "'\\''")
-        print(f"export {env_name.group(1)}='{safe}'")
-    else:
-        print(f"echo 'WARN: пароль для профиля {profile} не найден "
-              f"(env {env_name.group(1)} пуста, v8project.local.yaml без password)' >&2")
+if re.search(r"(?m)^\s+password:\s*\S", text):
+    pass  # литеральный пароль в профиле: testpilot читает его сам
+else:
+    env_name = re.search(r"password_env:\s*['\"]?([\w]+)", text)
+    if env_name and not os.environ.get(env_name.group(1)):
+        pwd = ""
+        local = root / "v8project.local.yaml"
+        if local.is_file():
+            ltext = local.read_text(encoding="utf-8")
+            m = re.search(r"(?m)^password:\s*['\"]?(.+?)\s*['\"]?\s*$", ltext)
+            if not m:  # вложенный infobases.origin.password
+                m = re.search(r"(?ms)^infobases:.*?password:\s*['\"]?(.+?)\s*['\"]?\s*$", ltext)
+            pwd = m.group(1) if m else ""
+        if pwd:
+            safe = pwd.replace("'", "'\\''")
+            print(f"export {env_name.group(1)}='{safe}'")
+        else:
+            print(f"echo 'WARN: пароль для профиля {profile} не найден "
+                  f"(password в профиле нет, env {env_name.group(1)} пуста, "
+                  f"v8project.local.yaml без password)' >&2")
 PY
 )"
 
