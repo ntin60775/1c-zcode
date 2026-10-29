@@ -61,6 +61,8 @@ HASH="$(printf '%s' "$ROOT" | sha1sum | cut -c1-8)"
 PIDFILE="/tmp/1c-db-$HASH.pid"
 LOG="/tmp/1c-db-$HASH.log"
 XVFB_PIDFILE="/tmp/1c-db-xvfb-$HASH.pid"
+WM_PIDFILE="/tmp/1c-db-wm-$HASH.pid"
+WM_LOG="/tmp/1c-db-wm-$HASH.log"
 PROXY_LOG="/tmp/1c-mcp-proxy-$HASH.log"
 PROXY_PIDFILE="/tmp/1c-mcp-proxy-$HASH.pid"
 VENV="$HOME/.local/venvs/1c-mcp-proxy"
@@ -244,6 +246,12 @@ if [[ $MODE == stop ]]; then
 	kill_client
 	rm -f "$PIDFILE"
 	echo "• клиент 1С остановлен"
+	# WM невидимого дисплея (ишью #40) — тоже ресурс стенда, гасим по pidfile.
+	if [[ -f "$WM_PIDFILE" ]] && kill -0 "$(cat "$WM_PIDFILE")" 2>/dev/null; then
+		kill "$(cat "$WM_PIDFILE")" 2>/dev/null || true
+		echo "• WM остановлен"
+	fi
+	rm -f "$WM_PIDFILE"
 	# Xvfb --headless-стенда тоже свой — гасим по pidfile, иначе оседают
 	# «забытые» Xvfb :97 (наблюдение приёмки dealer 2026-10-12).
 	if [[ -f "$XVFB_PIDFILE" ]] && kill -0 "$(cat "$XVFB_PIDFILE")" 2>/dev/null; then
@@ -452,6 +460,30 @@ if [[ $HEADLESS -eq 1 ]]; then
 		echo "✗ Xvfb :97 не поднялся за 10с; лог: $XVFB_LOG" >&2
 		tail -3 "$XVFB_LOG" >&2
 		exit 2
+	fi
+	# Полноценный невидимый дисплей = X-сервер + оконный менеджер (ишью #40).
+	# Голый Xvfb не отрисовывает модальные диалоги платформы («Предупреждение
+	# безопасности» при подключении бинарника epf, диалоги обновления
+	# конфигурации): клиент вечно ждёт ответа — UI не рисуется, poll к прокси
+	# не начинается. Под WM диалог виден и кликаем (руками или xdotool).
+	WM=""
+	for candidate in xfwm4 openbox fluxbox jwm metacity marco i3 twm; do
+		if command -v "$candidate" >/dev/null 2>&1; then WM="$candidate"; break; fi
+	done
+	if [[ -z $WM ]]; then
+		echo "⚠ WM не найден (xfwm4/openbox/…): модальные диалоги платформы под" >&2
+		echo "  Xvfb невидимы — стенд может навечно виснуть на вопросах (ишью #40)" >&2
+	elif DISPLAY=:97 xprop -root _NET_SUPPORTING_WM_CHECK >/dev/null 2>&1; then
+		echo "• WM на :97 уже есть — переиспользую"
+	else
+		setsid env -u WAYLAND_DISPLAY GDK_BACKEND=x11 DISPLAY=:97 "$WM" >"$WM_LOG" 2>&1 &
+		echo $! > "$WM_PIDFILE"
+		sleep 1
+		if DISPLAY=:97 xprop -root _NET_SUPPORTING_WM_CHECK >/dev/null 2>&1; then
+			echo "• невидимый дисплей :97 полноценный: Xvfb + $WM"
+		else
+			echo "⚠ $WM не поднялся (лог: $WM_LOG) — модальные диалоги будут невидимы" >&2
+		fi
 	fi
 	CHILD_ENV+=(DISPLAY=:97)
 else
