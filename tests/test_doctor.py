@@ -192,6 +192,74 @@ def main() -> int:
 		      r.stdout[:900])
 		(root / "v8project.local.yaml").write_text("", encoding="utf-8")
 
+		# ── 3c/41. живой статус конфигурационных хуков (fake state) ──
+		import json as _json
+		import os as _os
+		import time as _time
+		from datetime import date as _date
+
+		def hook_state(name: str, audit_age: float, doc_age: float,
+		               pending: bool) -> Path:
+			"""Fake state: журналы с управляемым возрастом + лог хоста."""
+			base = root / f"fakestate-{name}"
+			audit = base / "logs" / "rule-audit.jsonl"
+			audit.parent.mkdir(parents=True, exist_ok=True)
+			audit.write_text("", encoding="utf-8")
+			doc = base / "state" / "1c" / "doc-gate" / "session_x.json"
+			doc.parent.mkdir(parents=True, exist_ok=True)
+			doc.write_text("{}", encoding="utf-8")
+			now = _time.time()
+			for path, age in ((audit, audit_age), (doc, doc_age)):
+				_os.utime(path, (now - age, now - age))
+			if pending:
+				log = base / "cli" / "log" / f"zcode-{_date.today().isoformat()}.jsonl"
+				log.parent.mkdir(parents=True, exist_ok=True)
+				line = _json.dumps({"event": "config.project_hooks.pending_trust",
+				                    "context": {"configPath": str(root / ".zcode" / "config.json"),
+				                                "diagnosticCode":
+				                                    "config_project_hooks_pending_trust"}})
+				log.write_text(line + "\n", encoding="utf-8")
+			return base
+
+		def wired_config(age: float) -> None:
+			"""config.json с уводом mtime в прошлое (момент «разводки»)."""
+			cfg = root / ".zcode" / "config.json"
+			cfg.parent.mkdir(parents=True, exist_ok=True)
+			cfg.write_text("{}", encoding="utf-8")
+			now = _time.time()
+			_os.utime(cfg, (now - age, now - age))
+
+		wired_config(age=3600)
+		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("fresh", 7200, 7200, False))})
+		check("41: следов после разводки нет — WARN без паники",
+		      "исполнений хуков после последней разводки не видно" in r.stdout
+		      and "best-effort" in r.stdout, r.stdout[:900])
+		check("41: pending-ветка не звучит без лога",
+		      "доверие воркспейса" not in r.stdout, r.stdout[:900])
+
+		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("audit", 60, 7200, False))})
+		check("41: свежий rule-audit — OK «исполняются»",
+		      "хуки исполняются после последней разводки (rule-audit)" in r.stdout,
+		      r.stdout[:900])
+
+		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("doc", 7200, 60, False))})
+		check("41: свежий doc-gate — OK «исполняются»",
+		      "хуки исполняются после последней разводки (doc-gate)" in r.stdout,
+		      r.stdout[:900])
+
+		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("calm", 60, 7200, True))})
+		check("41: pending_trust при живом исполнении — OK с расшифровкой",
+		      "запись парсинга" in r.stdout and "не блокировка" in r.stdout,
+		      r.stdout[:900])
+
+		r = run_doctor(root, {"ZCODE_1C_STATE_DIR": str(hook_state("cold", 7200, 7200, True))})
+		check("41: pending_trust без следов — WARN ведёт в доверие UI",
+		      "доверие воркспейса" in r.stdout and "pending_trust" in r.stdout,
+		      r.stdout[:900])
+		check("41: pending_trust без следов — не FAIL",
+		      "исполнений хуков после последней разводки не видно" in r.stdout,
+		      r.stdout[:900])
+
 		# ── 1b. артефакты рантайма: манифест ↔ кэш (fake HOME) ──
 		import json as _json
 		SHA86 = "e" * 64

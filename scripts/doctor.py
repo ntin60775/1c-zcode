@@ -19,6 +19,11 @@
   3b. Обязательный минимум топологии — зовёт `scaffold check` скилла
      1c-project-layout (единственная правда о минимуме — там); неполный
      минимум = FAIL с указанием полного ритуала навыка.
+  3c. Живой статус конфигурационных хуков (#41): следы исполнения после
+     последней разводки (rule-audit, doc-gate) + диагностика хоста
+     config.project_hooks.pending_trust как наблюдение — она пишется при
+     каждом парсинге config.json с хуками и сосуществует с исполнением,
+     сама по себе блокировкой не является.
   4. Стайл-чекер резолвится (env → PATH → вендоренный пак).
   5. Скилл bsp (БСП-пак) вендорен.
   6. Shadow-дубли контурных скиллов на пользовательском уровне.
@@ -37,6 +42,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from datetime import date
 from pathlib import Path
 
 # contour hooks доступны в обеих раскладках: репо (scripts/../hooks) и
@@ -488,6 +494,55 @@ def main() -> int:
 			ok(".zcode/config.json разведён (hooks+MCP)")
 		else:
 			fail(".zcode/config.json разошёлся с разводкой — прогони wire_config.py")
+
+		# ── 3c. живой статус конфигурационных хуков (#41) ──
+		# Структуру разводки сверяет wire --check выше; здесь — вопрос
+		# «исполняются ли хуки фактически». Следы исполнения — журнал гейтов
+		# и состояние doc-gate, оба best-effort: пустота может значить и
+		# отсутствие повода для гейтов, не только блокировку.
+		state_base = Path(os.environ.get("ZCODE_1C_STATE_DIR") or Path.home() / ".zcode")
+		cfg_path = root / ".zcode" / "config.json"
+		wired_at = cfg_path.stat().st_mtime
+		traces = []
+		audit_log = state_base / "logs" / "rule-audit.jsonl"
+		if audit_log.is_file() and audit_log.stat().st_mtime > wired_at:
+			traces.append("rule-audit")
+		doc_gate = state_base / "state" / "1c" / "doc-gate"
+		if doc_gate.is_dir() and any(
+				p.stat().st_mtime > wired_at for p in doc_gate.glob("*.json")):
+			traces.append("doc-gate")
+		# Диагностика хоста config.project_hooks.pending_trust пишется при
+		# каждом парсинге config.json с хуками и сосуществует с исполнением
+		# (аудит 2026-10-29, ишью #41) — сама по себе блокировкой не является.
+		pending = False
+		host_log = state_base / "cli" / "log" / f"zcode-{date.today().isoformat()}.jsonl"
+		if host_log.is_file():
+			try:
+				for line in host_log.open(encoding="utf-8", errors="replace"):
+					if "pending_trust" not in line:
+						continue
+					try:
+						event = json.loads(line)
+					except json.JSONDecodeError:
+						continue
+					logged = (event.get("context") or {}).get("configPath") or ""
+					if logged == str(cfg_path) or str(Path(logged).resolve()) == str(cfg_path):
+						pending = True
+						break
+			except OSError:
+				pass
+		if traces:
+			note = ("; pending_trust в логе хоста — запись парсинга, "
+			        "не блокировка" if pending else "")
+			ok(f"хуки исполняются после последней разводки ({', '.join(traces)}){note}")
+		elif pending:
+			warn("исполнений хуков после последней разводки не видно; в сегодняшнем "
+			     "логе хоста есть pending_trust по этому конфигу — проверь доверие "
+			     "воркспейса в UI ZCode и повтори /1c-doctor (журнал гейтов "
+			     "best-effort: пустота может значить и отсутствие повода)")
+		else:
+			warn("исполнений хуков после последней разводки не видно — журнал гейтов "
+			     "best-effort, пустота может значить и отсутствие повода для гейтов")
 	else:
 		warn(".zcode/config.json нет — контур не разведён (навык 1c-project-bootstrap)")
 
