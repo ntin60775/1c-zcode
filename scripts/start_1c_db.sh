@@ -466,6 +466,11 @@ if [[ $HEADLESS -eq 1 ]]; then
 	# безопасности» при подключении бинарника epf, диалоги обновления
 	# конфигурации): клиент вечно ждёт ответа — UI не рисуется, poll к прокси
 	# не начинается. Под WM диалог виден и кликаем (руками или xdotool).
+	# Наличие WM — только по выводу xprop («window id»): xprop возвращает
+	# rc=0 даже для отсутствующего свойства (наблюдение 29.10).
+	wm_running() {
+		[[ $(DISPLAY=:97 xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null) == *"window id"* ]]
+	}
 	WM=""
 	for candidate in xfwm4 openbox fluxbox jwm metacity marco i3 twm; do
 		if command -v "$candidate" >/dev/null 2>&1; then WM="$candidate"; break; fi
@@ -473,13 +478,13 @@ if [[ $HEADLESS -eq 1 ]]; then
 	if [[ -z $WM ]]; then
 		echo "⚠ WM не найден (xfwm4/openbox/…): модальные диалоги платформы под" >&2
 		echo "  Xvfb невидимы — стенд может навечно виснуть на вопросах (ишью #40)" >&2
-	elif DISPLAY=:97 xprop -root _NET_SUPPORTING_WM_CHECK >/dev/null 2>&1; then
+	elif wm_running; then
 		echo "• WM на :97 уже есть — переиспользую"
 	else
 		setsid env -u WAYLAND_DISPLAY GDK_BACKEND=x11 DISPLAY=:97 "$WM" >"$WM_LOG" 2>&1 &
 		echo $! > "$WM_PIDFILE"
 		sleep 1
-		if DISPLAY=:97 xprop -root _NET_SUPPORTING_WM_CHECK >/dev/null 2>&1; then
+		if wm_running; then
 			echo "• невидимый дисплей :97 полноценный: Xvfb + $WM"
 		else
 			echo "⚠ $WM не поднялся (лог: $WM_LOG) — модальные диалоги будут невидимы" >&2
