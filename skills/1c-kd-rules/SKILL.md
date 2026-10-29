@@ -55,7 +55,7 @@ python3 .zcode/1c/scripts/kd_register_project.py .
 register подхватывает его в `rules_dir` сам — сервер пишет туда `rules_save`/`handlers_export`; нет
 каталога — register подскажет завести.
 
-## Живые проверки, справка без скиллов, массовые операции
+## Возможности станции и поведение операций
 
 - **Живые проверки** `live_status`, `live_rules_dump`/`live_rules_check`/`live_rules_install` (установка
   с откатом; запись — в два шага: предпросмотр, затем применение с хешем), `live_nodes_setup`,

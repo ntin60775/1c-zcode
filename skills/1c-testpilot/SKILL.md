@@ -180,7 +180,7 @@ testpilot.execute_command(command="e1cib/list/Документ.Реализац�
 |---|---|---|
 | Обычный GUI-e2e | `Client(profile=...)` (with-блок) — сам поднимет и погасит | профиль с `base`, `desktop: isolated`; `wait` у `launch_client` по умолчанию 120 с |
 | Один клиент на весь pytest-прогон | `--tc-client-scope=session` (передавать pytest напрямую, run_e2e.sh не передаёт) | клиент и состояние приложения переиспользуются, журналы/артефакты остаются раздельными |
-| Присоединиться к живому клиенту | поднять клиента с `/TESTCLIENT '-TPort'N` (вприлип) → `Client(host="127.0.0.1", port=N)` | `close()` после attach = только disconnect |
+| Присоединиться к живому клиенту | поднять клиента с `/TESTCLIENT '-TPort'N` (вручную) → `Client(host="127.0.0.1", port=N)` | `close()` после attach = только disconnect |
 | Список соединений/профилей | `list_connections`, `list_profiles` | |
 | Гасить клиента | `stop_client` (после launch) | после attach чужой клиент не гасим |
 
