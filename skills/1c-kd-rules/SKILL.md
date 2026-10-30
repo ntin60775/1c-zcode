@@ -8,8 +8,9 @@ when_to_use: "Задача про правила конвертации/обме
 
 Сервер — вендор-копия [egordoronchenko/kd-rules-mcp](https://github.com/egordoronchenko/kd-rules-mcp)
 (MIT, пин и процедура синка — `vendor/kd-rules-mcp/UPSTREAM.md` контура). Транспорт — streamable
-HTTP на петлевом интерфейсе; в проекте сервер объявляет `wire_config.py` под именем **`1c-kd`**,
-URL берётся из `.zcode/1c/contour.json` → `1c_kd.url` (умолчание `http://127.0.0.1:8060/mcp`).
+HTTP на петлевом интерфейсе; в проекте `wire_config.py` объявляет сервер под
+именем **`1c-kd`**, URL берётся из `.zcode/1c/contour.json` → `1c_kd.url`
+(умолчание `http://127.0.0.1:8060/mcp`).
 Что во что конвертировать, решает агент; сервер детерминированный — разбирает выгрузки,
 предлагает кандидатов, пишет XML и проверяет. Содержательные каноны работы — скиллы
 `kd2-rules-build`, `kd2-exchange-pitfalls`, `kd3-rules`; полный список инструментов с

@@ -54,7 +54,7 @@ when_to_use: "Проект 1С подключается к контуру (вп�
    `.zcode/testpilot/profiles.local.yaml`, `tools/VAParams.json`,
    `tools/va-env.local.json`, `v8project.local.yaml`, `build/`,
    `.zcode/contour` (если помечаешь деревья по месту). Сами `.zcode/`
-   (скиллы, hooks, config.json, workflows, журнала deploy) — в git.
+   (скиллы, hooks, config.json, workflows, журнал deploy) — в git.
 7. **Признак контура**: тестовое дерево — файл `.zcode/contour` со словом
    `test` (прод по умолчанию, fail-closed). Ключ `contour:` в
    `v8project.local.yaml` не писать: v8-runner 0.15 отвергает незнакомый

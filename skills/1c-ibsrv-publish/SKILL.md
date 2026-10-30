@@ -104,7 +104,7 @@ bash .zcode/1c/scripts/publish_ib.sh stop
 
 `E2E_PUBLISH_JSON` парсят API-тесты (`PUBLISH_URL` — см. скилл
 `1c-test-contour`, раздел API-контур). Живость вручную: `ss -tlnp | grep
-<порт>` слушает `127.0.0.1`, curl корня отвечает 200.
+<порт>` — слушает `127.0.0.1`; curl корня отвечает 200.
 
 ## Смежное
 
